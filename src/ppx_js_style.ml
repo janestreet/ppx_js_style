@@ -1,4 +1,4 @@
-open Ppx_core.Std
+open Ppx_core
 
 let annotated_ignores = ref false;;
 let check_comments = ref false;;
@@ -39,18 +39,18 @@ let fail ~loc = function
 ;;
 
 let check_deprecated_string ~f ~loc s =
-  match Scanf.sscanf s "[since %u-%u]" (fun y m -> (y, m)) with
+  match Caml.Scanf.sscanf s "[since %u-%u]" (fun y m -> (y, m)) with
   | exception _ -> f ~loc (Invalid_deprecated Missing_date)
   | (_year, month) ->
     if month = 0 || month > 12 then f ~loc (Invalid_deprecated Invalid_month)
 ;;
 
 let not_really_a_binding ~ext_name:s =
-  List.mem s [
+  List.mem [
     "test"; "test_unit"; "test_module";
     "bench"; "bench_fun"; "bench_module";
     "expect"; "expect_test";
-  ]
+  ] s ~equal:String.equal
 ;;
 
 let ignored_expr_must_be_annotated ignored_reason (expr : Parsetree.expression) ~f =
@@ -104,9 +104,9 @@ let iter_style_errors ~f = object (self)
           let loc = i.Parsetree.pstr_loc in
           Ast_pattern.(parse (pstr_value __ __)) loc i
             (fun _rec_flag vbs ->
-              List.iter super#value_binding vbs)
+              List.iter ~f:super#value_binding vbs)
         in
-        List.iter check_str_item str
+        List.iter ~f:check_str_item str
       | _ ->
         super#payload payload
 
@@ -129,15 +129,15 @@ module Comments_checking = struct
   (* Assumption in the following functions: [s <> ""] *)
 
   let is_cr_comment s =
-    let s = String.trim s in
-    (try String.sub s 0 2 = "CR"  with _ -> false) ||
-    (try String.sub s 0 2 = "XX"  with _ -> false) ||
-    (try String.sub s 0 3 = "XCR" with _ -> false) ||
-    (try String.sub s 0 7 = "JS-only" with _ -> false)
+    let s = String.strip s in
+    (String.is_prefix s ~prefix:"CR") ||
+    (String.is_prefix s ~prefix:"XX") ||
+    (String.is_prefix s ~prefix:"XCR") ||
+    (String.is_prefix s ~prefix:"JS-only")
 
-  let is_doc_comment s = s.[0] = '*'
+  let is_doc_comment s = Char.equal s.[0] '*'
 
-  let is_ignored_comment s = s.[0] = '_'
+  let is_ignored_comment s = Char.equal s.[0] '_'
 
   let can_appear_in_mli s = is_doc_comment s || is_ignored_comment s || is_cr_comment s
 
@@ -183,14 +183,12 @@ module Comments_checking = struct
         octavius_msg
 
   let is_intf_dot_ml fname =
-    let fname  = Filename.chop_extension fname in
-    let length = String.length fname in
-    length > 5 && String.sub fname (length - 5) 5 = "_intf"
+    String.is_suffix (Caml.Filename.chop_extension fname) ~suffix:"_intf"
 
   let check_all ?(intf=false) () =
-    List.iter (fun (comment, loc) ->
+    List.iter ~f:(fun (comment, loc) ->
       let intf = intf || is_intf_dot_ml loc.Location.loc_start.Lexing.pos_fname in
-      if (comment <> "") then (
+      if (String.(<>) comment "") then (
         (* Ensures that all comments present in the file are either ocamldoc comments
            or (*_ *) comments. *)
         if intf && not (can_appear_in_mli comment) then begin
@@ -205,7 +203,7 @@ end
 
 let () =
   Ppx_driver.add_arg "-annotated-ignores"
-    (Arg.Set annotated_ignores)
+    (Set annotated_ignores)
     ~doc:" If set, forces all ignored expressions (either under ignore or \
           inside a \"let _ = ...\") to have a type annotation."
 ;;
@@ -218,9 +216,9 @@ let () =
        did up to now) had no incidence.
        We want to enable the warning here. For some reason one can't just enable
        a warning programatically, one has to call [parse_options]... *)
-    Warnings.parse_options false "+50";
+    Ocaml_common.Warnings.parse_options false "+50";
   in
-  Ppx_driver.add_arg "-check-doc-comments" (Arg.Unit enable_checks)
+  Ppx_driver.add_arg "-check-doc-comments" (Unit enable_checks)
     ~doc:" If set, ensures that all comments in .mli files are either \
           documentation or (*_ *) comments.\n\
           Also enables warning 50 on the file, and check the syntax of doc comments."

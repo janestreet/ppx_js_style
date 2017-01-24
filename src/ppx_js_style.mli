@@ -1,4 +1,4 @@
-open Ppx_core.Std
+open Ppx_core
 
 module Ignored_reason : sig
   type t = Argument_to_ignore | Underscore_pattern

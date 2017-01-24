@@ -3,4 +3,4 @@
   (public_name ppx_js_style)
   (kind ppx_rewriter)
   (libraries (compiler-libs.common ppx_core ppx_driver octavius))
-  (preprocess metaquot)))
+  (preprocess (pps (ppx_metaquot)))))
