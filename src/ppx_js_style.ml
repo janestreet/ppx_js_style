@@ -2,6 +2,7 @@ open Ppx_core
 
 let annotated_ignores = ref false;;
 let check_comments = ref false;;
+let compat_32 = ref false
 
 let errorf ~loc fmt =
   Location.raise_errorf ~loc
@@ -29,13 +30,23 @@ module Invalid_deprecated = struct
       errorf ~loc "invalid month in deprecation date"
 end
 
+module Invalid_constant = struct
+  type t = string * string
+  let fail ~loc ((s, typ) : t) =
+    Location.raise_errorf ~loc
+      "Integer literal %s exceeds the range of representable \
+       integers of type %s on 32bit architectures" s typ
+end
+
 type error =
   | Invalid_deprecated of Invalid_deprecated.t
   | Missing_type_annotation of Ignored_reason.t
+  | Invalid_constant of Invalid_constant.t
 
 let fail ~loc = function
   | Invalid_deprecated e -> Invalid_deprecated.fail e ~loc
   | Missing_type_annotation e -> Ignored_reason.fail e ~loc
+  | Invalid_constant e -> Invalid_constant.fail e ~loc
 ;;
 
 let check_deprecated_string ~f ~loc s =
@@ -66,6 +77,28 @@ let ignored_expr_must_be_annotated ignored_reason (expr : Parsetree.expression) 
     -> ()
   | _ -> f ~loc:expr.pexp_loc (Missing_type_annotation ignored_reason)
 ;;
+
+let constant_with_loc =
+  let max_int_31 = Int32.(-) (Int32.shift_left 1l 30) 1l in
+  let min_int_31 = Int32.neg (Int32.shift_left 1l 30) in
+  fun ~loc c ->
+  if !compat_32
+  then match c with
+    | Pconst_integer (s,Some 'n') ->
+      begin
+        try ignore (Int32.of_string s)
+        with _ ->
+          fail ~loc (Invalid_constant (s, "nativeint"))
+      end
+    | Pconst_integer (s,None) ->
+      begin
+        try
+          let i = Int32.of_string s in
+          if Int32.(i < min_int_31 || i > max_int_31) then failwith "out of bound"
+        with _ ->
+          fail ~loc (Invalid_constant (s, "int"))
+      end
+    | _ -> ()
 
 let iter_style_errors ~f = object (self)
   inherit Ast_traverse.iter as super
@@ -117,7 +150,21 @@ let iter_style_errors ~f = object (self)
         ignored_expr_must_be_annotated Argument_to_ignore ~f ignored
       | _ -> ()
     );
+    begin match e with
+    | {pexp_desc = Pexp_constant c; pexp_loc; _ } ->
+      constant_with_loc ~loc:pexp_loc c
+    | _ -> ()
+    end;
     super#expression e
+
+  method! pattern e =
+    begin match e with
+    | {ppat_desc = Ppat_constant c; ppat_loc; _ } ->
+      constant_with_loc ~loc:ppat_loc c
+    | _ -> ()
+    end;
+    super#pattern e
+
 end
 
 let check = iter_style_errors ~f:fail
@@ -206,6 +253,12 @@ let () =
     (Set annotated_ignores)
     ~doc:" If set, forces all ignored expressions (either under ignore or \
           inside a \"let _ = ...\") to have a type annotation."
+;;
+
+let () =
+  Ppx_driver.add_arg "-compat-32"
+    (Set compat_32)
+    ~doc:" If set, checks that all constants are representable on 32bit architectures."
 ;;
 
 let () =

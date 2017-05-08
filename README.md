@@ -30,3 +30,10 @@ The following rules are enforced by ppx\_js\_style:
   of documentation comments.
 
   Finally, doc comments are checked to be syntactically valid.
+
+- Enabled by -compat-32:
+  Checks that calling ocamlc on the input would produce bytecode that
+  works on 32 bits architectures (including js\_of\_ocaml), ie that
+  all constant are representable on 32 bits architectures. Compared to
+  the compiler flag by the same name, it allows to perform this check
+  without building any bytecode.
