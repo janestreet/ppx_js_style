@@ -42,11 +42,15 @@ type error =
   | Invalid_deprecated of Invalid_deprecated.t
   | Missing_type_annotation of Ignored_reason.t
   | Invalid_constant of Invalid_constant.t
+  | Docstring_on_open
 
 let fail ~loc = function
   | Invalid_deprecated e -> Invalid_deprecated.fail e ~loc
   | Missing_type_annotation e -> Ignored_reason.fail e ~loc
   | Invalid_constant e -> Invalid_constant.fail e ~loc
+  | Docstring_on_open ->
+    errorf ~loc
+      "A documentation comment is attached to this [open] which will be dropped by odoc."
 ;;
 
 let check_deprecated_string ~f ~loc s =
@@ -114,6 +118,19 @@ let iter_style_errors ~f = object (self)
       | { Location. loc; txt = s } -> check_deprecated_string ~f ~loc s
       end
     | _ -> ()
+
+    method! open_description od =
+      if !check_comments then (
+        let has_doc_comments =
+          List.exists od.popen_attributes ~f:(fun (attr_name, _) ->
+            match attr_name.txt with
+            | "ocaml.doc" | "doc" -> true
+            | _ -> false
+          )
+        in
+        if has_doc_comments then f ~loc:od.popen_loc Docstring_on_open
+      );
+      super#open_description od
 
   method! value_binding vb =
     if !annotated_ignores then (

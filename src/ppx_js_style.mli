@@ -19,6 +19,7 @@ type error =
   | Invalid_deprecated of Invalid_deprecated.t
   | Missing_type_annotation of Ignored_reason.t
   | Invalid_constant of Invalid_constant.t
+  | Docstring_on_open
 
 val iter_style_errors :
   f:(loc:Location.t -> error -> unit) -> Ast_traverse.iter
