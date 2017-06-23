@@ -16,6 +16,8 @@ The following rules are enforced by ppx\_js\_style:
   Ignored expressions must come with a type annotation, such as:
     `ignore (expr : typ)`
     `let _ : type = expr`
+  Note that aliases need not be annotated:
+    `let _ = Foo.bar in`
 
 - Enabled by -check-doc-comments:
   Comments in mli must either be documentation comments or explicitely
