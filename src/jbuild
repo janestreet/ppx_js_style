@@ -5,4 +5,10 @@
   (libraries (compiler-libs.common ppx_core ppx_driver octavius))
   (preprocess (pps (ppx_metaquot ppx_driver.runner)))))
 
+(rule
+  ((targets (dated_deprecation.ml))
+   (deps ())
+   (action (write-file ${@} "let enabled = ref false"))
+   (fallback)))
+
 (jbuild_version 1)

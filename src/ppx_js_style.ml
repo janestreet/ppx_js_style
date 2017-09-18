@@ -110,7 +110,7 @@ let iter_style_errors ~f = object (self)
   method! attribute (name, payload) =
     let loc = loc_of_attribute (name, payload) in
     match name.txt with
-    | "ocaml.deprecated" | "deprecated" ->
+    | "ocaml.deprecated" | "deprecated" when !Dated_deprecation.enabled ->
       begin match
         Ast_pattern.(parse (single_expr_payload (estring __'))) loc payload (fun s -> s)
       with
@@ -293,6 +293,15 @@ let () =
           documentation or (*_ *) comments.\n\
           Also enables warning 50 on the file, and check the syntax of doc comments."
 ;;
+
+let () =
+  let enable () = Dated_deprecation.enabled := true in
+  let disable () = Dated_deprecation.enabled := false in
+  Ppx_driver.add_arg "-dated-deprecation" (Unit enable)
+    ~doc:{| If set, ensures that all `[@@deprecated]` attributes must contain \
+            the date of deprecation, using the format `"[since MM-YYYY] ..."`.|};
+  Ppx_driver.add_arg "-no-dated-deprecation" (Unit disable)
+    ~doc:" inverse of -dated-deprecation."
 
 let () =
   Ppx_driver.register_transformation "js_style"

@@ -9,8 +9,11 @@ Coding rules
 
 The following rules are enforced by ppx\_js\_style:
 
-- `[@@deprecated]` attributes must contain the date of deprecation,
+- Enabled by -dated-deprecation:
+  `[@@deprecated]` attributes must contain the date of deprecation,
   using the format `"[since MM-YYYY] ..."`
+  N.B. this check, on by default at janestreet, but off by default externally,
+  can also be disabled with the flag -no-dated-deprecation
 
 - Enabled by -annotated-ignores:
   Ignored expressions must come with a type annotation, such as:
