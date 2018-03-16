@@ -1,4 +1,4 @@
-open Ppx_core
+open Ppxlib
 
 module Ignored_reason : sig
   type t = Argument_to_ignore | Underscore_pattern

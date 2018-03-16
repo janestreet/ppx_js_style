@@ -1,4 +1,5 @@
-open Ppx_core
+open Base
+open Ppxlib
 
 let annotated_ignores = ref false;;
 let check_comments = ref false;;
@@ -6,7 +7,7 @@ let compat_32 = ref false
 
 let errorf ~loc fmt =
   Location.raise_errorf ~loc
-    ("Jane Street style: " ^^ fmt)
+    (Caml.(^^) "Jane Street style: " fmt)
 ;;
 
 module Ignored_reason = struct
@@ -188,7 +189,7 @@ let check = iter_style_errors ~f:fail
 
 module Comments_checking = struct
   let errorf ~loc fmt =
-    Location.raise_errorf ~loc ("Documentation error: " ^^ fmt)
+    Location.raise_errorf ~loc (Caml.(^^) "Documentation error: " fmt)
 
   (* Assumption in the following functions: [s <> ""] *)
 
@@ -266,14 +267,14 @@ module Comments_checking = struct
 end
 
 let () =
-  Ppx_driver.add_arg "-annotated-ignores"
+  Driver.add_arg "-annotated-ignores"
     (Set annotated_ignores)
     ~doc:" If set, forces all ignored expressions (either under ignore or \
           inside a \"let _ = ...\") to have a type annotation."
 ;;
 
 let () =
-  Ppx_driver.add_arg "-compat-32"
+  Driver.add_arg "-compat-32"
     (Set compat_32)
     ~doc:" If set, checks that all constants are representable on 32bit architectures."
 ;;
@@ -288,7 +289,7 @@ let () =
        a warning programatically, one has to call [parse_options]... *)
     Ocaml_common.Warnings.parse_options false "+50";
   in
-  Ppx_driver.add_arg "-check-doc-comments" (Unit enable_checks)
+  Driver.add_arg "-check-doc-comments" (Unit enable_checks)
     ~doc:" If set, ensures that all comments in .mli files are either \
           documentation or (*_ *) comments.\n\
           Also enables warning 50 on the file, and check the syntax of doc comments."
@@ -297,14 +298,14 @@ let () =
 let () =
   let enable () = Dated_deprecation.enabled := true in
   let disable () = Dated_deprecation.enabled := false in
-  Ppx_driver.add_arg "-dated-deprecation" (Unit enable)
+  Driver.add_arg "-dated-deprecation" (Unit enable)
     ~doc:{| If set, ensures that all `[@@deprecated]` attributes must contain \
             the date of deprecation, using the format `"[since MM-YYYY] ..."`.|};
-  Ppx_driver.add_arg "-no-dated-deprecation" (Unit disable)
+  Driver.add_arg "-no-dated-deprecation" (Unit disable)
     ~doc:" inverse of -dated-deprecation."
 
 let () =
-  Ppx_driver.register_transformation "js_style"
+  Driver.register_transformation "js_style"
     ~intf:(fun sg ->
       check#signature sg;
       if !check_comments then Comments_checking.check_all ~intf:true ();
