@@ -105,20 +105,26 @@ let constant_with_loc =
       end
     | _ -> ()
 
+let is_deprecated = function
+  | "ocaml.deprecated" | "deprecated" -> true
+  | _ -> false
+
+let check_deprecated attr =
+  if is_deprecated (fst attr).txt then
+    errorf ~loc:(loc_of_attribute attr)
+      "Invalid deprecated attribute, it will be ignored by the compiler"
+
 let iter_style_errors ~f = object (self)
   inherit Ast_traverse.iter as super
 
   method! attribute (name, payload) =
     let loc = loc_of_attribute (name, payload) in
-    match name.txt with
-    | "ocaml.deprecated" | "deprecated" when !Dated_deprecation.enabled ->
-      begin match
+    if !Dated_deprecation.enabled && is_deprecated name.txt then
+      match
         Ast_pattern.(parse (single_expr_payload (estring __'))) loc payload (fun s -> s)
       with
       | exception _ -> f ~loc (Invalid_deprecated Not_a_string)
       | { Location. loc; txt = s } -> check_deprecated_string ~f ~loc s
-      end
-    | _ -> ()
 
     method! open_description od =
       if !check_comments then (
@@ -183,6 +189,9 @@ let iter_style_errors ~f = object (self)
     end;
     super#pattern e
 
+  method! core_type t =
+    List.iter t.ptyp_attributes ~f:check_deprecated;
+    super#core_type t
 end
 
 let check = iter_style_errors ~f:fail
