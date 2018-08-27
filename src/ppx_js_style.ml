@@ -209,11 +209,13 @@ module Comments_checking = struct
     (String.is_prefix s ~prefix:"XCR") ||
     (String.is_prefix s ~prefix:"JS-only")
 
+  let is_cinaps s = Char.equal s.[0] '$'
+
   let is_doc_comment s = Char.equal s.[0] '*'
 
   let is_ignored_comment s = Char.equal s.[0] '_'
 
-  let can_appear_in_mli s = is_doc_comment s || is_ignored_comment s || is_cr_comment s
+  let can_appear_in_mli s = is_doc_comment s || is_ignored_comment s || is_cr_comment s || is_cinaps s
 
   let syntax_check_doc_comment ~loc comment =
     match Octavius.parse (Lexing.from_string comment) with
