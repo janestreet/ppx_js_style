@@ -290,20 +290,26 @@ let () =
     ~doc:" If set, checks that all constants are representable on 32bit architectures."
 ;;
 
+(* Enable warning 50 by default, one can opt-out with [-dont-check-doc-comments-attachment] *)
 let () =
-  let enable_checks () =
-    check_comments := true;
-    (* A bit hackish: as we're running ppx_driver with -pp the parsing is done
-       by ppx_driver and not ocaml itself, so giving "-w @50" to ocaml (as we
-       did up to now) had no incidence.
-       We want to enable the warning here. For some reason one can't just enable
-       a warning programatically, one has to call [parse_options]... *)
-    Ocaml_common.Warnings.parse_options false "+50";
-  in
+  (* A bit hackish: as we're running ppx_driver with -pp the parsing is done
+     by ppx_driver and not ocaml itself, so giving "-w @50" to ocaml (as we
+     did up to now) had no incidence.
+     We want to enable the warning here. For some reason one can't just enable
+     a warning programatically, one has to call [parse_options]... *)
+  Ocaml_common.Warnings.parse_options false "+50"
+
+let () =
+  let disable_w50 () = Ocaml_common.Warnings.parse_options false "-50" in
+  Driver.add_arg "-dont-check-doc-comments-attachment" (Unit disable_w50)
+    ~doc:" ignore warning 50 on the file."
+;;
+
+let () =
+  let enable_checks () = check_comments := true in
   Driver.add_arg "-check-doc-comments" (Unit enable_checks)
     ~doc:" If set, ensures that all comments in .mli files are either \
-          documentation or (*_ *) comments.\n\
-          Also enables warning 50 on the file, and check the syntax of doc comments."
+          documentation or (*_ *) comments. Also check the syntax of doc comments."
 ;;
 
 let () =
