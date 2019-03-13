@@ -40,3 +40,15 @@ The following rules are enforced by ppx\_js\_style:
   all constant are representable on 32 bits architectures. Compared to
   the compiler flag by the same name, it allows to perform this check
   without building any bytecode.
+
+- Enabled by default, disabled by -dont-check-underscored-literal
+  Check for misleading usage of underscores in number
+  literals. Currrently it means that underscores must be:
+  - in positions that are multiple of 3 for numbers in decimal notation.
+  - in positions that are multiple of 2 for numbers in hexadecimal,
+    octal or binary notation.
+
+  Two consecutive underscores in a number disables the check for that
+  number. This is useful to turn off the check for integers that are
+  really fixed point decimals, like `1_000__0000` to represent `1000.0`
+  with four implied decimal places.

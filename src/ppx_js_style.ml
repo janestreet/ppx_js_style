@@ -1,9 +1,10 @@
 open Base
 open Ppxlib
 
-let annotated_ignores = ref false;;
-let check_comments = ref false;;
+let annotated_ignores = ref false
+let check_comments = ref false
 let compat_32 = ref false
+let check_underscored_literal = ref true
 
 let errorf ~loc fmt =
   Location.raise_errorf ~loc
@@ -39,16 +40,25 @@ module Invalid_constant = struct
        integers of type %s on 32bit architectures" s typ
 end
 
+module Suspicious_literal = struct
+  type t = string * string
+  let fail ~loc ((s, typ) : t) =
+    Location.raise_errorf ~loc
+      "The %s literal %s contains underscores at suspicious positions" typ s
+end
+
 type error =
   | Invalid_deprecated of Invalid_deprecated.t
   | Missing_type_annotation of Ignored_reason.t
   | Invalid_constant of Invalid_constant.t
+  | Suspicious_literal of Suspicious_literal.t
   | Docstring_on_open
 
 let fail ~loc = function
   | Invalid_deprecated e -> Invalid_deprecated.fail e ~loc
   | Missing_type_annotation e -> Ignored_reason.fail e ~loc
   | Invalid_constant e -> Invalid_constant.fail e ~loc
+  | Suspicious_literal e -> Suspicious_literal.fail e ~loc
   | Docstring_on_open ->
     errorf ~loc
       "A documentation comment is attached to this [open] which will be dropped by odoc."
@@ -83,28 +93,116 @@ let ignored_expr_must_be_annotated ignored_reason (expr : Parsetree.expression) 
   | _ -> f ~loc:expr.pexp_loc (Missing_type_annotation ignored_reason)
 ;;
 
-let constant_with_loc =
-  let max_int_31 = Int32.(-) (Int32.shift_left 1l 30) 1l in
-  let min_int_31 = Int32.neg (Int32.shift_left 1l 30) in
-  fun ~loc c ->
-  if !compat_32
-  then match c with
-    | Pconst_integer (s,Some 'n') ->
-      begin
-        try ignore (Int32.of_string s)
-        with _ ->
-          fail ~loc (Invalid_constant (s, "nativeint"))
-      end
-    | Pconst_integer (s,None) ->
-      begin
-        try
-          let i = Int32.of_string s in
-          if Int32.(i < min_int_31 || i > max_int_31) then failwith "out of bound"
-        with _ ->
-          fail ~loc (Invalid_constant (s, "int"))
-      end
-    | _ -> ()
+module Constant = struct
+  let max_int_31 = Int32.(-) (Int32.shift_left 1l 30) 1l
+  let min_int_31 = Int32.neg (Int32.shift_left 1l 30)
+  let check_compat_32 ~loc c =
+    if !compat_32
+    then match c with
+      | Pconst_integer (s,Some 'n') ->
+        begin
+          try ignore (Int32.of_string s)
+          with _ ->
+            fail ~loc (Invalid_constant (s, "nativeint"))
+        end
+      | Pconst_integer (s,None) ->
+        begin
+          try
+            let i = Int32.of_string s in
+            if Int32.(i < min_int_31 || i > max_int_31) then failwith "out of bound"
+          with _ ->
+            fail ~loc (Invalid_constant (s, "int"))
+        end
+      | _ -> ()
 
+  let check_underscored ~loc c =
+    if !check_underscored_literal
+    then (
+      let check_segment ~name ~start ~stop ~kind s = (* start and stop are inclusive *)
+        let incr = if start < stop then 1 else -1 in
+        let modulo =
+          match kind with
+          | `Decimal -> 3
+          | `Hexadecimal
+          | `Binary
+          | `Octal -> 2
+        in
+        let rec loop string_pos ~number_offset =
+          let number_offset =
+            match s.[string_pos] with
+            | '0' .. '9' | 'a' .. 'f' | 'A' .. 'F' ->
+              number_offset + 1
+            | '_' ->
+              if number_offset % modulo <> 0
+              then fail ~loc (Suspicious_literal (s, name))
+              else number_offset
+            | _ -> assert false
+          in
+          if stop <> string_pos
+          then loop (string_pos + incr) ~number_offset
+        in
+        loop start ~number_offset:0
+      in
+      let parse_prefix s =
+        let i =
+          match s.[0] with
+          | '-' | '+' -> 1
+          | _ -> 0
+        in
+        if String.length s >= i + 2
+        then begin
+          match s.[i], s.[i + 1] with
+          | '0', ('x' | 'X') -> `Hexadecimal, i + 2
+          | '0', ('b' | 'B') -> `Binary, i + 2
+          | '0', ('o' | 'O') -> `Octal, i + 2
+          | _ -> `Decimal, i
+        end else `Decimal, i
+      in
+      let should_check =
+        let has_double_underscores s = String.is_substring ~substring:"__" s in
+        let has_underscore s = String.exists ~f:(fun c -> Char.(=) c '_') s in
+        fun s -> has_underscore s && not (has_double_underscores s)
+      in
+      match c with
+      | Pconst_integer (s, _) ->
+        if should_check s
+        then
+          let kind, lower = parse_prefix s in
+          check_segment ~name:"integer" ~start:(String.length s - 1) ~stop:lower ~kind s
+      | Pconst_float (s, _) ->
+        if should_check s
+        then
+          let kind, lower = parse_prefix s in
+          let upper = (* only validate the mantissa *)
+            let power_split =
+              match kind with
+              | `Decimal ->
+                String.lfindi s ~f:(fun _ c ->
+                  match c with 'e' | 'E' -> true  | _ -> false)
+              | `Hexadecimal ->
+                String.lfindi s ~f:(fun _ c ->
+                  match c with 'p' | 'P' -> true | _ -> false)
+              | `Binary | `Octal ->
+                assert false
+            in
+            match power_split with
+            | None -> String.length s - 1
+            | Some i -> i - 1
+          in
+          let name = "float" in
+          begin match String.index_from s lower '.' with
+          | None -> check_segment ~name ~start:upper ~stop:lower ~kind s
+          | Some i ->
+            if lower <> i then check_segment ~name ~start:(i-1) ~stop:lower ~kind s;
+            if upper <> i then check_segment ~name ~start:(i+1) ~stop:upper ~kind s
+          end
+      | Pconst_char _ | Pconst_string _ -> ())
+
+
+  let check ~loc c =
+    check_compat_32 ~loc c;
+    check_underscored ~loc c
+end
 let is_deprecated = function
   | "ocaml.deprecated" | "deprecated" -> true
   | _ -> false
@@ -126,18 +224,18 @@ let iter_style_errors ~f = object (self)
       | exception _ -> f ~loc (Invalid_deprecated Not_a_string)
       | { Location. loc; txt = s } -> check_deprecated_string ~f ~loc s
 
-    method! open_description od =
-      if !check_comments then (
-        let has_doc_comments =
-          List.exists od.popen_attributes ~f:(fun (attr_name, _) ->
-            match attr_name.txt with
-            | "ocaml.doc" | "doc" -> true
-            | _ -> false
-          )
-        in
-        if has_doc_comments then f ~loc:od.popen_loc Docstring_on_open
-      );
-      super#open_description od
+  method! open_description od =
+    if !check_comments then (
+      let has_doc_comments =
+        List.exists od.popen_attributes ~f:(fun (attr_name, _) ->
+          match attr_name.txt with
+          | "ocaml.doc" | "doc" -> true
+          | _ -> false
+        )
+      in
+      if has_doc_comments then f ~loc:od.popen_loc Docstring_on_open
+    );
+    super#open_description od
 
   method! value_binding vb =
     if !annotated_ignores then (
@@ -154,14 +252,14 @@ let iter_style_errors ~f = object (self)
       self#payload payload
     else
       (* We want to allow "let % test _ = ..." (and similar extensions which don't
-        actually bind) without warning. *)
+         actually bind) without warning. *)
       match payload with
       | PStr str ->
         let check_str_item i =
           let loc = i.Parsetree.pstr_loc in
           Ast_pattern.(parse (pstr_value __ __)) loc i
             (fun _rec_flag vbs ->
-              List.iter ~f:super#value_binding vbs)
+               List.iter ~f:super#value_binding vbs)
         in
         List.iter ~f:check_str_item str
       | _ ->
@@ -176,7 +274,7 @@ let iter_style_errors ~f = object (self)
     );
     begin match e with
     | {pexp_desc = Pexp_constant c; pexp_loc; _ } ->
-      constant_with_loc ~loc:pexp_loc c
+      Constant.check ~loc:pexp_loc c
     | _ -> ()
     end;
     super#expression e
@@ -184,7 +282,7 @@ let iter_style_errors ~f = object (self)
   method! pattern e =
     begin match e with
     | {ppat_desc = Ppat_constant c; ppat_loc; _ } ->
-      constant_with_loc ~loc:ppat_loc c
+      Constant.check ~loc:ppat_loc c
     | _ -> ()
     end;
     super#pattern e
@@ -304,6 +402,13 @@ let () =
   Driver.add_arg "-dont-check-doc-comments-attachment" (Unit disable_w50)
     ~doc:" ignore warning 50 on the file."
 ;;
+
+let () =
+  let disable_check_underscored_literal () = check_underscored_literal := false in
+  Driver.add_arg "-dont-check-underscored-literal" (Unit disable_check_underscored_literal)
+    ~doc:" do not check position of underscores in numbers."
+;;
+
 
 let () =
   let enable_checks () = check_comments := true in
