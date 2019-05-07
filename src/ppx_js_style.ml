@@ -5,6 +5,7 @@ let annotated_ignores = ref false
 let check_comments = ref false
 let compat_32 = ref false
 let check_underscored_literal = ref true
+let cold_instead_of_inline_never = ref false
 
 let errorf ~loc fmt =
   Location.raise_errorf ~loc
@@ -207,6 +208,10 @@ let is_deprecated = function
   | "ocaml.deprecated" | "deprecated" -> true
   | _ -> false
 
+let is_inline = function
+  | "ocaml.inline" | "inline" -> true
+  | _ -> false
+
 let check_deprecated attr =
   if is_deprecated (fst attr).txt then
     errorf ~loc:(loc_of_attribute attr)
@@ -223,6 +228,14 @@ let iter_style_errors ~f = object (self)
       with
       | exception _ -> f ~loc (Invalid_deprecated Not_a_string)
       | { Location. loc; txt = s } -> check_deprecated_string ~f ~loc s
+    else if !cold_instead_of_inline_never && is_inline name.txt then
+      match
+        Ast_pattern.(parse (single_expr_payload (pexp_ident __'))) loc payload Fn.id
+      with
+      | exception _ -> ()
+      | { Location. loc; txt = Lident "never" } ->
+        errorf ~loc "Attribute error: please use [@cold] instead of [@inline never]"
+      | _ -> ()
 
   method! open_description od =
     if !check_comments then (

@@ -105,4 +105,3 @@ Error: The float literal 0x12_000.13_121p4 contains underscores at suspicious po
 let _ = 0x12.13p11
 [%%expect{|
 |}];;
-
