@@ -228,14 +228,6 @@ let iter_style_errors ~f = object (self)
       with
       | exception _ -> f ~loc (Invalid_deprecated Not_a_string)
       | { Location. loc; txt = s } -> check_deprecated_string ~f ~loc s
-    else if !cold_instead_of_inline_never && is_inline name.txt then
-      match
-        Ast_pattern.(parse (single_expr_payload (pexp_ident __'))) loc payload Fn.id
-      with
-      | exception _ -> ()
-      | { Location. loc; txt = Lident "never" } ->
-        errorf ~loc "Attribute error: please use [@cold] instead of [@inline never]"
-      | _ -> ()
 
   method! open_description od =
     if !check_comments then (
@@ -306,6 +298,24 @@ let iter_style_errors ~f = object (self)
 end
 
 let check = iter_style_errors ~f:fail
+
+let enforce_cold = object
+  inherit [Driver.Lint_error.t list] Ast_traverse.fold
+  method! attribute (name, payload) acc =
+    let loc = loc_of_attribute (name, payload) in
+    if !cold_instead_of_inline_never && is_inline name.txt then
+      match
+        Ast_pattern.(parse (single_expr_payload (pexp_ident __'))) loc payload Fn.id
+      with
+      | exception _ -> acc
+      | { Location. loc; txt = Lident "never" } ->
+        (Driver.Lint_error.of_string
+          loc
+          "Attribute error: please use [@cold] instead of [@inline never]") :: acc
+      | _ -> acc
+    else
+      acc
+end
 
 module Comments_checking = struct
   let errorf ~loc fmt =
@@ -451,4 +461,7 @@ let () =
       if !check_comments then Comments_checking.check_all ();
       st
     )
+    (* note: we do not use ~impl because we want the check to run before ppx
+       processing (ppx_cold will replace `[@cold]` with `[@inline never] ...`)*)
+    ~lint_impl:(fun st -> enforce_cold#structure st [])
 ;;
