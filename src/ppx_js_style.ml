@@ -48,11 +48,26 @@ module Suspicious_literal = struct
       "The %s literal %s contains underscores at suspicious positions" typ s
 end
 
+module Invalid_ocamlformat_attribute = struct
+  type t = string
+
+  let fail ~loc (reason : t) =
+    Location.raise_errorf ~loc
+      "Invalid ocamlformat attribute. %s" reason
+
+  let kind (name,payload) =
+    match name.txt, payload with
+    | "ocamlformat", PStr ([%str "disable"] | [%str "enable"]) -> `Enable_disable
+    | "ocamlformat", _ -> `Other
+    | _ -> `Not_ocamlformat
+end
+
 type error =
   | Invalid_deprecated of Invalid_deprecated.t
   | Missing_type_annotation of Ignored_reason.t
   | Invalid_constant of Invalid_constant.t
   | Suspicious_literal of Suspicious_literal.t
+  | Invalid_ocamlformat_attribute of Invalid_ocamlformat_attribute.t
   | Docstring_on_open
 
 let fail ~loc = function
@@ -60,10 +75,14 @@ let fail ~loc = function
   | Missing_type_annotation e -> Ignored_reason.fail e ~loc
   | Invalid_constant e -> Invalid_constant.fail e ~loc
   | Suspicious_literal e -> Suspicious_literal.fail e ~loc
+  | Invalid_ocamlformat_attribute e -> Invalid_ocamlformat_attribute.fail e ~loc
   | Docstring_on_open ->
     errorf ~loc
       "A documentation comment is attached to this [open] which will be dropped by odoc."
 ;;
+
+let local_ocamlformat_config_disallowed =
+  Invalid_ocamlformat_attribute "Ocamlformat cannot be configured locally"
 
 let check_deprecated_string ~f ~loc s =
   match Caml.Scanf.sscanf s "[since %u-%u]" (fun y m -> (y, m)) with
@@ -220,14 +239,25 @@ let check_deprecated attr =
 let iter_style_errors ~f = object (self)
   inherit Ast_traverse.iter as super
 
-  method! attribute (name, payload) =
-    let loc = loc_of_attribute (name, payload) in
-    if !Dated_deprecation.enabled && is_deprecated name.txt then
-      match
-        Ast_pattern.(parse (single_expr_payload (estring __'))) loc payload (fun s -> s)
-      with
-      | exception _ -> f ~loc (Invalid_deprecated Not_a_string)
-      | { Location. loc; txt = s } -> check_deprecated_string ~f ~loc s
+  method! attribute ((name, payload) as attr) =
+    let loc = loc_of_attribute attr in
+    (if !Dated_deprecation.enabled && is_deprecated name.txt then
+       match
+         Ast_pattern.(parse (single_expr_payload (estring __'))) loc payload (fun s -> s)
+       with
+       | exception _ -> f ~loc (Invalid_deprecated Not_a_string)
+       | { Location. loc; txt = s } -> check_deprecated_string ~f ~loc s
+    );
+    (match Invalid_ocamlformat_attribute.kind attr with
+     | `Enable_disable ->
+       f ~loc
+         (Invalid_ocamlformat_attribute
+            "Ocamlformat can only be disabled at toplevel\n\
+             (e.g [@@@ocamlformat \"disable\"])")
+     | `Other ->
+       f ~loc local_ocamlformat_config_disallowed
+     | `Not_ocamlformat -> ()
+    )
 
   method! open_description od =
     if !check_comments then (
@@ -295,6 +325,26 @@ let iter_style_errors ~f = object (self)
   method! core_type t =
     List.iter t.ptyp_attributes ~f:check_deprecated;
     super#core_type t
+
+  method! structure_item t =
+    (match t.pstr_desc with
+     | Pstr_attribute a ->
+       (match Invalid_ocamlformat_attribute.kind a with
+        | `Enable_disable -> ()
+        | `Other ->
+          f ~loc:t.pstr_loc local_ocamlformat_config_disallowed
+        | `Not_ocamlformat -> super#structure_item t)
+     | _ -> super#structure_item t)
+
+  method! signature_item t =
+    (match t.psig_desc with
+     | Psig_attribute a ->
+       (match Invalid_ocamlformat_attribute.kind a with
+        | `Enable_disable -> ()
+        | `Other ->
+          f ~loc:t.psig_loc local_ocamlformat_config_disallowed
+        | `Not_ocamlformat -> super#signature_item t)
+     | _ -> super#signature_item t)
 end
 
 let check = iter_style_errors ~f:fail
@@ -431,7 +481,6 @@ let () =
   Driver.add_arg "-dont-check-underscored-literal" (Unit disable_check_underscored_literal)
     ~doc:" do not check position of underscores in numbers."
 ;;
-
 
 let () =
   let enable_checks () = check_comments := true in

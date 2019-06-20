@@ -19,11 +19,16 @@ module Suspicious_literal : sig
   type t
 end
 
+module Invalid_ocamlformat_attribute : sig
+  type t
+end
+
 type error =
   | Invalid_deprecated of Invalid_deprecated.t
   | Missing_type_annotation of Ignored_reason.t
   | Invalid_constant of Invalid_constant.t
   | Suspicious_literal of Suspicious_literal.t
+  | Invalid_ocamlformat_attribute of Invalid_ocamlformat_attribute.t
   | Docstring_on_open
 
 val iter_style_errors :
