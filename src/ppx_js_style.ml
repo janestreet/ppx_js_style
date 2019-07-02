@@ -114,8 +114,8 @@ let ignored_expr_must_be_annotated ignored_reason (expr : Parsetree.expression) 
 ;;
 
 module Constant = struct
-  let max_int_31 = Int32.(-) (Int32.shift_left 1l 30) 1l
-  let min_int_31 = Int32.neg (Int32.shift_left 1l 30)
+  let max_int_31 = Int64.(-) (Int64.shift_left 1L 30) 1L
+  let min_int_31 = Int64.neg (Int64.shift_left 1L 30)
   let check_compat_32 ~loc c =
     if !compat_32
     then match c with
@@ -128,8 +128,8 @@ module Constant = struct
       | Pconst_integer (s,None) ->
         begin
           try
-            let i = Int32.of_string s in
-            if Int32.(i < min_int_31 || i > max_int_31) then failwith "out of bound"
+            let i = Int64.of_string s in
+            if Int64.(i < min_int_31 || i > max_int_31) then failwith "out of bound"
           with _ ->
             fail ~loc (Invalid_constant (s, "int"))
         end
