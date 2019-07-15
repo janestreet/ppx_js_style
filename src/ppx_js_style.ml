@@ -4,6 +4,7 @@ open Ppxlib
 let annotated_ignores = ref false
 let check_comments = ref false
 let compat_32 = ref false
+let allow_toplevel_expression = ref false
 let check_underscored_literal = ref true
 let cold_instead_of_inline_never = ref false
 
@@ -236,6 +237,11 @@ let check_deprecated attr =
     errorf ~loc:(loc_of_attribute attr)
       "Invalid deprecated attribute, it will be ignored by the compiler"
 
+let is_mlt_or_mdx fname =
+  String.is_suffix fname ~suffix:".mlt"
+  || String.is_suffix fname ~suffix:".mdx"
+  || String.equal "//toplevel//" fname
+
 let iter_style_errors ~f = object (self)
   inherit Ast_traverse.iter as super
 
@@ -258,6 +264,14 @@ let iter_style_errors ~f = object (self)
        f ~loc local_ocamlformat_config_disallowed
      | `Not_ocamlformat -> ()
     )
+
+  method! payload p =
+    match p with
+    | PStr l ->
+      (* toplevel expressions in payload are fine. *)
+      List.iter l ~f:(fun item ->
+        self#check_structure_item item ~allow_toplevel_expression:true)
+    | _ -> super#payload p
 
   method! open_description od =
     if !check_comments then (
@@ -326,8 +340,13 @@ let iter_style_errors ~f = object (self)
     List.iter t.ptyp_attributes ~f:check_deprecated;
     super#core_type t
 
-  method! structure_item t =
+  method private check_structure_item t ~allow_toplevel_expression =
     (match t.pstr_desc with
+     | Pstr_eval (_,_) when
+         not allow_toplevel_expression
+         && not (is_mlt_or_mdx t.pstr_loc.Location.loc_start.Lexing.pos_fname) ->
+       errorf ~loc:t.pstr_loc
+         "Toplevel expression are not allowed here."
      | Pstr_attribute a ->
        (match Invalid_ocamlformat_attribute.kind a with
         | `Enable_disable -> ()
@@ -335,6 +354,9 @@ let iter_style_errors ~f = object (self)
           f ~loc:t.pstr_loc local_ocamlformat_config_disallowed
         | `Not_ocamlformat -> super#structure_item t)
      | _ -> super#structure_item t)
+
+  method! structure_item t =
+    self#check_structure_item t ~allow_toplevel_expression:!allow_toplevel_expression
 
   method! signature_item t =
     (match t.psig_desc with
@@ -360,8 +382,8 @@ let enforce_cold = object
       | exception _ -> acc
       | { Location. loc; txt = Lident "never" } ->
         (Driver.Lint_error.of_string
-          loc
-          "Attribute error: please use [@cold] instead of [@inline never]") :: acc
+           loc
+           "Attribute error: please use [@cold] instead of [@inline never]") :: acc
       | _ -> acc
     else
       acc
@@ -487,6 +509,12 @@ let () =
   Driver.add_arg "-check-doc-comments" (Unit enable_checks)
     ~doc:" If set, ensures that all comments in .mli files are either \
           documentation or (*_ *) comments. Also check the syntax of doc comments."
+;;
+
+let () =
+  let allow_top_expr () = allow_toplevel_expression := true in
+  Driver.add_arg "-allow-toplevel-expression" (Unit allow_top_expr)
+    ~doc:" If set, allow toplevel expression."
 ;;
 
 let () =
