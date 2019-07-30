@@ -6,7 +6,7 @@ let check_comments = ref false
 let compat_32 = ref false
 let allow_toplevel_expression = ref false
 let check_underscored_literal = ref true
-let cold_instead_of_inline_never = ref false
+let cold_instead_of_inline_never = ref true
 
 let errorf ~loc fmt =
   Location.raise_errorf ~loc
