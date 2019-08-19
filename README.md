@@ -16,7 +16,7 @@ format `"[since MM-YYYY] ..."`
 N.B. this check, on by default at Jane Street, but off by default externally. It
 can also be disabled with the flag `-no-dated-deprecation`.
 
-## `-annotated-ignores`
+## `-allow-unannotated-ignores`
 
 Ignored expressions must come with a type annotation, such as:
 ```
@@ -27,6 +27,8 @@ Note that aliases need not be annotated:
 ```
 let _ = Foo.bar in
 ```
+
+This check is enabled by default, and can be disabled by passing the flag.
 
 ## `-check-doc-comments`
 
@@ -64,3 +66,18 @@ Two consecutive underscores in a number disables the check for that number. This
 is useful to turn off the check for integers that are really fixed point
 decimals, like `1_000__0000` to represent `1000.0` with four implied decimal
 places.
+
+## Binding operators
+
+Since 4.08 one can define
+[binding operators](http://caml.inria.fr/pub/docs/manual-ocaml/manual046.html).
+Which provide some of the features of `ppx_let`, but not all of them.
+For that reason, we have made the choice to keep using `ppx_let` internally and
+to forbid the use of binding operators, to keep a consistent style across our
+codebase.
+
+So uses of these operators are rejected by default at Jane Street, but allowed
+externally.
+This behavior can be changed with the flags:
+- `-allow-let-operators`
+- `-forbid-let-operators`

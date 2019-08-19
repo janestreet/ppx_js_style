@@ -2,5 +2,6 @@
  (libraries compiler-libs.common base ppxlib octavius)
  (preprocess (pps ppxlib.metaquot)))
 
-(rule (targets dated_deprecation.ml) (deps)
- (action (write-file %{targets} "let enabled = ref false")) (mode fallback))
+(rule (targets in_janestreet.ml) (deps)
+ (action (write-file %{targets} "let in_janestreet = false "))
+ (mode fallback))

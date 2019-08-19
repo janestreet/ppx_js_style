@@ -1,12 +1,14 @@
 open Base
 open Ppxlib
 
-let annotated_ignores = ref false
+let annotated_ignores = ref true
 let check_comments = ref false
 let compat_32 = ref false
 let allow_toplevel_expression = ref false
 let check_underscored_literal = ref true
 let cold_instead_of_inline_never = ref true
+let require_dated_deprecation = ref In_janestreet.in_janestreet
+let allow_letop_uses = ref (not In_janestreet.in_janestreet)
 
 let errorf ~loc fmt =
   Location.raise_errorf ~loc
@@ -56,7 +58,7 @@ module Invalid_ocamlformat_attribute = struct
     Location.raise_errorf ~loc
       "Invalid ocamlformat attribute. %s" reason
 
-  let kind (name,payload) =
+  let kind { attr_name = name; attr_payload = payload; attr_loc = _; } =
     match name.txt, payload with
     | "ocamlformat", PStr ([%str "disable"] | [%str "enable"]) -> `Enable_disable
     | "ocamlformat", _ -> `Other
@@ -70,6 +72,7 @@ type error =
   | Suspicious_literal of Suspicious_literal.t
   | Invalid_ocamlformat_attribute of Invalid_ocamlformat_attribute.t
   | Docstring_on_open
+  | Use_of_letop of { op_name : string }
 
 let fail ~loc = function
   | Invalid_deprecated e -> Invalid_deprecated.fail e ~loc
@@ -80,6 +83,12 @@ let fail ~loc = function
   | Docstring_on_open ->
     errorf ~loc
       "A documentation comment is attached to this [open] which will be dropped by odoc."
+  | Use_of_letop { op_name } ->
+    errorf ~loc
+      "This use of ( %s ) is forbidden.@.\
+       ppx_let is currently more featureful, please use that instead to keep a consistent \
+       style"
+      op_name
 ;;
 
 let local_ocamlformat_config_disallowed =
@@ -233,7 +242,7 @@ let is_inline = function
   | _ -> false
 
 let check_deprecated attr =
-  if is_deprecated (fst attr).txt then
+  if is_deprecated attr.attr_name.txt then
     errorf ~loc:(loc_of_attribute attr)
       "Invalid deprecated attribute, it will be ignored by the compiler"
 
@@ -245,9 +254,9 @@ let is_mlt_or_mdx fname =
 let iter_style_errors ~f = object (self)
   inherit Ast_traverse.iter as super
 
-  method! attribute ((name, payload) as attr) =
+  method! attribute ({ attr_name = name; attr_payload = payload; attr_loc = _ } as attr) =
     let loc = loc_of_attribute attr in
-    (if !Dated_deprecation.enabled && is_deprecated name.txt then
+    (if !require_dated_deprecation && is_deprecated name.txt then
        match
          Ast_pattern.(parse (single_expr_payload (estring __'))) loc payload (fun s -> s)
        with
@@ -276,7 +285,7 @@ let iter_style_errors ~f = object (self)
   method! open_description od =
     if !check_comments then (
       let has_doc_comments =
-        List.exists od.popen_attributes ~f:(fun (attr_name, _) ->
+        List.exists od.popen_attributes ~f:(fun { attr_name; _ } ->
           match attr_name.txt with
           | "ocaml.doc" | "doc" -> true
           | _ -> false
@@ -315,15 +324,13 @@ let iter_style_errors ~f = object (self)
         super#payload payload
 
   method! expression e =
-    if !annotated_ignores then (
-      match e with
-      | [%expr ignore [%e? ignored]] ->
-        ignored_expr_must_be_annotated Argument_to_ignore ~f ignored
-      | _ -> ()
-    );
     begin match e with
     | {pexp_desc = Pexp_constant c; pexp_loc; _ } ->
       Constant.check ~loc:pexp_loc c
+    | [%expr ignore [%e? ignored]] when !annotated_ignores ->
+      ignored_expr_must_be_annotated Argument_to_ignore ~f ignored
+    | {pexp_desc = Pexp_letop { let_ ; _ }; _ } when not !allow_letop_uses ->
+      fail ~loc:let_.pbop_op.loc (Use_of_letop { op_name = let_.pbop_op.txt })
     | _ -> ()
     end;
     super#expression e
@@ -373,11 +380,11 @@ let check = iter_style_errors ~f:fail
 
 let enforce_cold = object
   inherit [Driver.Lint_error.t list] Ast_traverse.fold
-  method! attribute (name, payload) acc =
-    let loc = loc_of_attribute (name, payload) in
-    if !cold_instead_of_inline_never && is_inline name.txt then
+  method! attribute attr acc =
+    let loc = loc_of_attribute attr in
+    if !cold_instead_of_inline_never && is_inline attr.attr_name.txt then
       match
-        Ast_pattern.(parse (single_expr_payload (pexp_ident __'))) loc payload Fn.id
+        Ast_pattern.(parse (single_expr_payload (pexp_ident __'))) loc attr.attr_payload Fn.id
       with
       | exception _ -> acc
       | { Location. loc; txt = Lident "never" } ->
@@ -474,7 +481,15 @@ let () =
   Driver.add_arg "-annotated-ignores"
     (Set annotated_ignores)
     ~doc:" If set, forces all ignored expressions (either under ignore or \
-          inside a \"let _ = ...\") to have a type annotation."
+          inside a \"let _ = ...\") to have a type annotation. (This is the default.)"
+;;
+
+let () =
+  let disable_annotated_ignores () = annotated_ignores := false in
+  Driver.add_arg "-allow-unannotated-ignores"
+    (Unit disable_annotated_ignores)
+    ~doc:" If set, allows ignored expressions (either under ignore or inside a \"let _ = \
+          ...\") not to have a type annotation."
 ;;
 
 let () =
@@ -518,13 +533,21 @@ let () =
 ;;
 
 let () =
-  let enable () = Dated_deprecation.enabled := true in
-  let disable () = Dated_deprecation.enabled := false in
+  let enable () = require_dated_deprecation := true in
+  let disable () = require_dated_deprecation := false in
   Driver.add_arg "-dated-deprecation" (Unit enable)
     ~doc:{| If set, ensures that all `[@@deprecated]` attributes must contain \
             the date of deprecation, using the format `"[since MM-YYYY] ..."`.|};
   Driver.add_arg "-no-dated-deprecation" (Unit disable)
     ~doc:" inverse of -dated-deprecation."
+
+let () =
+  let allow () = allow_letop_uses := true in
+  let forbid () = allow_letop_uses := false in
+  Driver.add_arg "-allow-let-operators" (Unit allow)
+    ~doc:{| allow uses of let-operators|};
+  Driver.add_arg "-forbid-let-operators" (Unit forbid)
+    ~doc:{| forbid uses of let-operators|}
 
 let () =
   Driver.register_transformation "js_style"

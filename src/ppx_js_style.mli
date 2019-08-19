@@ -30,6 +30,7 @@ type error =
   | Suspicious_literal of Suspicious_literal.t
   | Invalid_ocamlformat_attribute of Invalid_ocamlformat_attribute.t
   | Docstring_on_open
+  | Use_of_letop of { op_name : string }
 
 val iter_style_errors :
   f:(loc:Location.t -> error -> unit) -> Ast_traverse.iter
