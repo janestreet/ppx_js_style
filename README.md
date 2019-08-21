@@ -81,3 +81,17 @@ externally.
 This behavior can be changed with the flags:
 - `-allow-let-operators`
 - `-forbid-let-operators`
+
+# Setting the flags in a jbuild file
+
+These flags are typically passed to the ppx via the ppx_jane pps. If a developer
+wanted to allow unannotated ignores, they might add the following `preprocess`
+clause to their jbuild file:
+
+```
+(executables
+ ((names (example_application))
+  (libraries ())
+  (preprocess (pps (ppx_jane -allow-unannotated-ignores)))
+  ))
+```
