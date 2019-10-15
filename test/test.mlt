@@ -3,7 +3,7 @@ module type S = sig
 end
 
 [%%expect{|
-Line _, characters 16-48:
+Line _, characters _-_:
 Error: Jane Street style: Invalid deprecated attribute, it will be ignored by the compiler
 |}];;
 
@@ -20,7 +20,7 @@ let find_and_sum tbl k1 k2 =
   return (x1 + x2)
 
 [%%expect{|
-Line _, characters 2-6:
+Line _, characters _-_:
 Error: Jane Street style: This use of ( let* ) is forbidden.
 ppx_let is currently more featureful, please use that instead to keep a consistent style
 |}];;

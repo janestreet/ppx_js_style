@@ -2,7 +2,7 @@
 let _ : _ = 3 [@ocamlformat "test"]
 
 [%%expect {|
-Line _, characters 16-34:
+Line _, characters _-_:
 Error: Invalid ocamlformat attribute. Ocamlformat cannot be configured locally
 |}]
 
@@ -19,7 +19,7 @@ let _ : _ = `dont_reformat_me
 let _ = x [@@ocamlformat "disable"]
 
 [%%expect {|
-Line _, characters 13-34:
+Line _, characters _-_:
 Error: Invalid ocamlformat attribute. Ocamlformat can only be disabled at toplevel
 (e.g [@@@ocamlformat "disable"])
 |}]

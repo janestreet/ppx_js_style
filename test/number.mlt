@@ -1,6 +1,6 @@
 let _ : _ = 10_00
 [%%expect{|
-Line _, characters 12-17:
+Line _, characters _-_:
 Error: The integer literal 10_00 contains underscores at suspicious positions
 |}];;
 
@@ -10,7 +10,7 @@ let _ : _ = 10_000
 
 let _ : _ = 0x10_000
 [%%expect{|
-Line _, characters 12-20:
+Line _, characters _-_:
 Error: The integer literal 0x10_000 contains underscores at suspicious positions
 |}];;
 
@@ -20,7 +20,7 @@ let _ : _ = 0x10_00
 
 let _ : _ = 0b10_000
 [%%expect{|
-Line _, characters 12-20:
+Line _, characters _-_:
 Error: The integer literal 0b10_000 contains underscores at suspicious positions
 |}];;
 
@@ -30,7 +30,7 @@ let _ : _ = 0b10_00
 
 let _ : _ = 0o10_000
 [%%expect{|
-Line _, characters 12-20:
+Line _, characters _-_:
 Error: The integer literal 0o10_000 contains underscores at suspicious positions
 |}];;
 
@@ -41,7 +41,7 @@ let _ : _ = 0o10_00
 
 let _ : _ = 012_00.013_121
 [%%expect{|
-Line _, characters 12-26:
+Line _, characters _-_:
 Error: The float literal 012_00.013_121 contains underscores at suspicious positions
 |}];;
 
@@ -53,14 +53,14 @@ let _ : _ = 012_000.013_121
 
 let _ : _ = 012_000.13_121
 [%%expect{|
-Line _, characters 12-26:
+Line _, characters _-_:
 Error: The float literal 012_000.13_121 contains underscores at suspicious positions
 |}];;
 
 
 let _ : _ = 012_000.13_121
 [%%expect{|
-Line _, characters 12-26:
+Line _, characters _-_:
 Error: The float literal 012_000.13_121 contains underscores at suspicious positions
 |}];;
 
@@ -72,7 +72,7 @@ let _ : _ = 012_000.013_121_e-123
 
 let _ : _ = 012_000.13_121e123
 [%%expect{|
-Line _, characters 12-30:
+Line _, characters _-_:
 Error: The float literal 012_000.13_121e123 contains underscores at suspicious positions
 |}];;
 
@@ -80,7 +80,7 @@ Error: The float literal 012_000.13_121e123 contains underscores at suspicious p
 
 let _ : _ = 0x12_000.013_121p-2
 [%%expect{|
-Line _, characters 12-31:
+Line _, characters _-_:
 Error: The float literal 0x12_000.013_121p-2 contains underscores at suspicious positions
 |}];;
 
@@ -91,14 +91,14 @@ let _ : _ = 0x12_00.13_12p-2
 
 let _ : _ = 0x013_121_p-2
 [%%expect{|
-Line _, characters 12-25:
+Line _, characters _-_:
 Error: The float literal 0x013_121_p-2 contains underscores at suspicious positions
 |}];;
 
 
 let _ : _ = 0x12_000.13_121p4
 [%%expect{|
-Line _, characters 12-29:
+Line _, characters _-_:
 Error: The float literal 0x12_000.13_121p4 contains underscores at suspicious positions
 |}];;
 
