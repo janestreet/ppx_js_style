@@ -417,46 +417,30 @@ module Comments_checking = struct
 
   let can_appear_in_mli s = is_doc_comment s || is_ignored_comment s || is_cr_comment s || is_cinaps s
 
-  let syntax_check_doc_comment ~loc comment =
-    match Octavius.parse (Lexing.from_string comment) with
+  let syntax_check_doc_comment ~(loc : location) comment =
+    let containing_definition = `Root ({
+      Odoc_model.Root.package = "dummy";
+      file = Odoc_model.Root.Odoc_file.create_page "dummy";
+      digest = Caml.Digest.string "dummy";
+    },
+      Odoc_model.Names.UnitName.of_string "Dummy")
+    in
+    let parsed_comment =
+      Odoc_model.Error.catch (fun () ->
+        Odoc_parser.parse_comment
+          ~sections_allowed:`All
+          ~containing_definition
+          ~location:loc.Location.loc_start
+          ~text:comment) in
+    match parsed_comment with
     | Ok _ -> ()
-    | Error { Octavius.Errors. error ; location } ->
-      let octavius_msg = Octavius.Errors.message error in
-      let octavius_loc =
-        let { Octavius.Errors. start ; finish } = location in
-        let loc_start = loc.Location.loc_start in
-        let open Lexing in
-        let loc_start =
-          let pos_bol = if start.line = 1 then loc_start.pos_bol else 0 in
-          { loc_start with
-            pos_bol;
-            pos_lnum = loc_start.pos_lnum + start.line - 1;
-            pos_cnum =
-              if start.line = 1 then
-                loc_start.pos_cnum + start.column
-              else
-                start.column
-          }
-        in
-        let loc_end =
-          let pos_bol = if finish.line = 1 then loc_start.pos_bol else 0 in
-          { loc_start with
-            pos_bol;
-            pos_lnum = loc_start.pos_lnum + finish.line - 1;
-            pos_cnum =
-              if finish.line = 1 then
-                loc_start.pos_cnum + finish.column
-              else
-                finish.column
-          }
-        in
-        { loc with Location. loc_start; loc_end }
-      in
-      errorf ~loc:octavius_loc
+    | Error error ->
+      let odoc_msg = Odoc_model.Error.to_string error in
+      errorf ~loc
         "%s\nYou can look at \
          http://caml.inria.fr/pub/docs/manual-ocaml/ocamldoc.html#sec318\n\
          for a description of the recognized syntax."
-        octavius_msg
+        odoc_msg
 
   let is_intf_dot_ml fname =
     String.is_suffix (Caml.Filename.chop_extension fname) ~suffix:"_intf"
