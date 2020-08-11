@@ -6,7 +6,7 @@ let check_comments = ref false
 let compat_32 = ref false
 let allow_toplevel_expression = ref false
 let check_underscored_literal = ref true
-let cold_instead_of_inline_never = ref true
+let cold_instead_of_inline_never = ref false
 let require_dated_deprecation = ref In_janestreet.in_janestreet
 let allow_letop_uses = ref (not In_janestreet.in_janestreet)
 
@@ -527,6 +527,14 @@ let () =
     ~doc:{| allow uses of let-operators|};
   Driver.add_arg "-forbid-let-operators" (Unit forbid)
     ~doc:{| forbid uses of let-operators|}
+
+let () =
+  let allow () = cold_instead_of_inline_never := false in
+  let forbid () = cold_instead_of_inline_never := true in
+  Driver.add_arg "-allow-inline-never" (Unit allow)
+    ~doc:{| allow uses of [@inline never]|};
+  Driver.add_arg "-forbid-inline-never" (Unit forbid)
+    ~doc:{| forbid uses of [@inline never]|}
 
 let () =
   Driver.register_transformation "js_style"

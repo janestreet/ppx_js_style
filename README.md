@@ -82,6 +82,15 @@ This behavior can be changed with the flags:
 - `-allow-let-operators`
 - `-forbid-let-operators`
 
+## `-forbid-inline-never`
+
+This check, disabled by default, rejects all uses of the `[@inline never]`.
+
+The compiler attribute `[@inline never]` prevents a function from being inlined.
+In most cases, when a user marks a function with `[@inline never]` it is because
+the function is cold and they would be better off using `[@cold]`, provided
+by `ppx_cold`, which prevents other optimisations as well as inlining.
+
 # Setting the flags in a jbuild file
 
 These flags are typically passed to the ppx via the ppx_jane pps. If a developer
