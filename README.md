@@ -70,7 +70,7 @@ places.
 ## Binding operators
 
 Since 4.08 one can define
-[binding operators](http://caml.inria.fr/pub/docs/manual-ocaml/manual046.html).
+[binding operators](https://caml.inria.fr/pub/docs/manual-ocaml/bindingops.html).
 Which provide some of the features of `ppx_let`, but not all of them.
 For that reason, we have made the choice to keep using `ppx_let` internally and
 to forbid the use of binding operators, to keep a consistent style across our
