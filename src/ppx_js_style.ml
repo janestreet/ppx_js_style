@@ -7,8 +7,8 @@ let compat_32 = ref false
 let allow_toplevel_expression = ref false
 let check_underscored_literal = ref true
 let cold_instead_of_inline_never = ref false
-let require_dated_deprecation = ref In_janestreet.in_janestreet
-let allow_letop_uses = ref (not In_janestreet.in_janestreet)
+let require_dated_deprecation = ref true
+let allow_letop_uses = ref false
 
 let errorf ~loc fmt =
   Location.raise_errorf ~loc
