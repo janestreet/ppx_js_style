@@ -12,7 +12,7 @@ let allow_letop_uses = ref false
 
 let errorf ~loc fmt =
   Location.raise_errorf ~loc
-    (Caml.(^^) "Jane Street style: " fmt)
+    (Stdlib.(^^) "Jane Street style: " fmt)
 ;;
 
 module Ignored_reason = struct
@@ -95,7 +95,7 @@ let local_ocamlformat_config_disallowed =
   Invalid_ocamlformat_attribute "Ocamlformat cannot be configured locally"
 
 let check_deprecated_string ~f ~loc s =
-  match Caml.Scanf.sscanf s "[since %u-%u]" (fun y m -> (y, m)) with
+  match Stdlib.Scanf.sscanf s "[since %u-%u]" (fun y m -> (y, m)) with
   | exception _ -> f ~loc (Invalid_deprecated Missing_date)
   | (_year, month) ->
     if month = 0 || month > 12 then f ~loc (Invalid_deprecated Invalid_month)
@@ -371,7 +371,7 @@ end
 
 module Comments_checking = struct
   let errorf ~loc fmt =
-    Location.raise_errorf ~loc (Caml.(^^) "Documentation error: " fmt)
+    Location.raise_errorf ~loc (Stdlib.(^^) "Documentation error: " fmt)
 
   (* Assumption in the following functions: [s <> ""] *)
 
@@ -432,7 +432,7 @@ module Comments_checking = struct
         octavius_msg
 
   let is_intf_dot_ml fname =
-    String.is_suffix (Caml.Filename.chop_extension fname) ~suffix:"_intf"
+    String.is_suffix (Stdlib.Filename.chop_extension fname) ~suffix:"_intf"
 
   let check_all ?(intf=false) () =
     List.iter ~f:(fun (comment, loc) ->
@@ -484,10 +484,10 @@ let () =
      did up to now) had no incidence.
      We want to enable the warning here. For some reason one can't just enable
      a warning programatically, one has to call [parse_options]... *)
-  Ocaml_common.Warnings.parse_options false "+50"
+  ignore (Ocaml_common.Warnings.parse_options false "+50")
 
 let () =
-  let disable_w50 () = Ocaml_common.Warnings.parse_options false "-50" in
+  let disable_w50 () = ignore (Ocaml_common.Warnings.parse_options false "-50") in
   Driver.add_arg "-dont-check-doc-comments-attachment" (Unit disable_w50)
     ~doc:" ignore warning 50 on the file."
 ;;
