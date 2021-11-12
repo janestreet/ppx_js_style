@@ -1,7 +1,9 @@
 open Ppxlib
 
 module Ignored_reason : sig
-  type t = Argument_to_ignore | Underscore_pattern
+  type t =
+    | Argument_to_ignore
+    | Underscore_pattern
 end
 
 module Invalid_deprecated : sig
@@ -32,7 +34,5 @@ type error =
   | Docstring_on_open
   | Use_of_letop of { op_name : string }
 
-val iter_style_errors :
-  f:(loc:Location.t -> error -> unit) -> Ast_traverse.iter
-
+val iter_style_errors : f:(loc:Location.t -> error -> unit) -> Ast_traverse.iter
 val check : Ast_traverse.iter
