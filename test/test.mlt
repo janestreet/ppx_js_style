@@ -60,7 +60,8 @@ let foo = [%expect "foo"]
   {|
 Line _, characters _-_:
 Error: Extension `expect' was not translated.
-Hint: `expect' is available for structure items but is used here in the
-context of an expression.
-Did you put it at the wrong level?
+       Hint: `expect' is available for structure items but is used here in
+       the
+       context of an expression.
+       Did you put it at the wrong level?
 |}]

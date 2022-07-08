@@ -402,12 +402,21 @@ module Comments_checking = struct
     || String.is_prefix s ~prefix:"JS-only"
   ;;
 
+  let is_mdx_comment s =
+    let s = String.strip s in
+    String.is_prefix s ~prefix:"$MDX"
+  ;;
+
   let is_cinaps s = Char.equal s.[0] '$'
   let is_doc_comment s = Char.equal s.[0] '*'
   let is_ignored_comment s = Char.equal s.[0] '_'
 
   let can_appear_in_mli s =
-    is_doc_comment s || is_ignored_comment s || is_cr_comment s || is_cinaps s
+    is_doc_comment s
+    || is_ignored_comment s
+    || is_cr_comment s
+    || is_cinaps s
+    || is_mdx_comment s
   ;;
 
   let syntax_check_doc_comment ~loc comment =
