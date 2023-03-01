@@ -50,7 +50,7 @@ let%expect_test _ = "whatever"
 [%%expect
   {|
 Line _, characters _-_:
-Error: ppx_expect: extension is disabled because the tests would be ignored (the build system didn't pass -inline-test-lib)
+Error: ppx_expect: extension is disabled because the tests would be ignored (the build system didn't pass -inline-test-lib. With jenga or dune, this usually happens when writing tests in files that are part of an executable stanza, but only library stanzas support inline tests)
 |}]
 
 (* a regression test (this used to result in a strange error message): *)
