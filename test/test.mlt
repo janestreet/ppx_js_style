@@ -59,9 +59,5 @@ let foo = [%expect "foo"]
 [%%expect
   {|
 Line _, characters _-_:
-Error: Extension `expect' was not translated.
-       Hint: `expect' is available for structure items but is used here in
-       the
-       context of an expression.
-       Did you put it at the wrong level?
+Error: Extension `expect' was not translated
 |}]
