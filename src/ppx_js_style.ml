@@ -265,7 +265,7 @@ let iter_style_errors ~f =
     inherit Ast_traverse.iter as super
 
     method! attribute ({ attr_name = name; attr_payload = payload; attr_loc = _ } as attr)
-      =
+        =
       let loc = loc_of_attribute attr in
       if !require_dated_deprecation && is_deprecated name.txt
       then (
@@ -337,7 +337,7 @@ let iter_style_errors ~f =
       match t.pstr_desc with
       | Pstr_eval (_, _)
         when (not allow_toplevel_expression)
-          && not (is_mlt_or_mdx t.pstr_loc.Location.loc_start.Lexing.pos_fname) ->
+             && not (is_mlt_or_mdx t.pstr_loc.Location.loc_start.Lexing.pos_fname) ->
         errorf ~loc:t.pstr_loc "Toplevel expression are not allowed here."
       | Pstr_attribute a ->
         (match Invalid_ocamlformat_attribute.kind a with
@@ -606,7 +606,7 @@ let () =
       check#structure st;
       if !check_comments then Comments_checking.check_all ();
       st)
-    (* note: we do not use ~impl because we want the check to run before ppx
+      (* note: we do not use ~impl because we want the check to run before ppx
        processing (ppx_cold will replace `[@cold]` with `[@inline never] ...`)*)
     ~lint_impl:(fun st -> enforce_cold#structure st [])
 ;;
