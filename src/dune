@@ -1,3 +1,7 @@
-(library (name ppx_js_style) (public_name ppx_js_style) (kind ppx_rewriter)
+(library
+ (name ppx_js_style)
+ (public_name ppx_js_style)
+ (kind ppx_rewriter)
  (libraries compiler-libs.common base ppxlib octavius)
- (preprocess (pps ppxlib.metaquot)))
+ (preprocess
+  (pps ppxlib.metaquot)))
