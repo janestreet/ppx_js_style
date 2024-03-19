@@ -8,8 +8,7 @@ Error: The integer literal 10_00 contains underscores at suspicious positions
 
 let (_ : _) = 10_000
 
-[%%expect {|
-|}]
+[%%expect {| |}]
 
 let (_ : _) = 0x10_000
 
@@ -21,8 +20,7 @@ Error: The integer literal 0x10_000 contains underscores at suspicious positions
 
 let (_ : _) = 0x10_00
 
-[%%expect {|
-|}]
+[%%expect {| |}]
 
 let (_ : _) = 0b10_000
 
@@ -34,8 +32,7 @@ Error: The integer literal 0b10_000 contains underscores at suspicious positions
 
 let (_ : _) = 0b10_00
 
-[%%expect {|
-|}]
+[%%expect {| |}]
 
 let (_ : _) = 0o10_000
 
@@ -47,8 +44,7 @@ Error: The integer literal 0o10_000 contains underscores at suspicious positions
 
 let (_ : _) = 0o10_00
 
-[%%expect {|
-|}]
+[%%expect {| |}]
 
 let (_ : _) = 012_00.013_121
 
@@ -60,8 +56,7 @@ Error: The float literal 012_00.013_121 contains underscores at suspicious posit
 
 let (_ : _) = 012_000.013_121
 
-[%%expect {|
-|}]
+[%%expect {| |}]
 
 let (_ : _) = 012_000.13_121
 
@@ -81,8 +76,7 @@ Error: The float literal 012_000.13_121 contains underscores at suspicious posit
 
 let (_ : _) = 012_000.013_121_e-123
 
-[%%expect {|
-|}]
+[%%expect {| |}]
 
 let (_ : _) = 012_000.13_121e123
 
@@ -102,8 +96,7 @@ Error: The float literal 0x12_000.013_121p-2 contains underscores at suspicious 
 
 let (_ : _) = 0x12_00.13_12p-2
 
-[%%expect {|
-|}]
+[%%expect {| |}]
 
 let (_ : _) = 0x013_121_p-2
 
@@ -123,5 +116,4 @@ Error: The float literal 0x12_000.13_121p4 contains underscores at suspicious po
 
 let (_ : _) = 0x12.13p11
 
-[%%expect {|
-|}]
+[%%expect {| |}]

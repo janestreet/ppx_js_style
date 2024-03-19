@@ -12,8 +12,7 @@ let _ : _ = `dont_reformat_me
 
 [@@@ocamlformat "enable"]
 
-[%%expect {|
-|}]
+[%%expect {| |}]
 
 
 let _ = x [@@ocamlformat "disable"]

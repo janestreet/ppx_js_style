@@ -54,7 +54,9 @@ Error: ppx_expect: extension is disabled because the tests would be ignored (the
 |}]
 
 (* a regression test (this used to result in a strange error message): *)
-let foo = [%expect "foo"]
+let foo = [%expect " 
+ foo
+ "]
 
 [%%expect
   {|
