@@ -114,15 +114,16 @@ let check_deprecated_string ~f ~loc s =
 ;;
 
 let ignored_expr_must_be_annotated ignored_reason (expr : Parsetree.expression) ~f =
-  match expr.pexp_desc with
+  match
+    Ppxlib_jane.Shim.Expression_desc.of_parsetree expr.pexp_desc ~loc:expr.pexp_loc
+  with
   (* explicitely annotated -> good *)
   | Pexp_constraint _
   | Pexp_coerce _
   (* no need to warn people trying to silence other warnings *)
   | Pexp_construct _
-  | Pexp_ident _
-  | Pexp_fun _
-  | Pexp_function _ -> ()
+  | Pexp_function _
+  | Pexp_ident _ -> ()
   | _ -> f ~loc:expr.pexp_loc (Missing_type_annotation ignored_reason)
 ;;
 
@@ -420,42 +421,54 @@ module Comments_checking = struct
   ;;
 
   let syntax_check_doc_comment ~loc comment =
-    match Octavius.parse (Lexing.from_string comment) with
-    | Ok _ -> ()
-    | Error { Octavius.Errors.error; location } ->
-      let octavius_msg = Octavius.Errors.message error in
-      let octavius_loc =
-        let { Octavius.Errors.start; finish } = location in
-        let loc_start = loc.Location.loc_start in
-        let open Lexing in
-        let loc_start =
-          let pos_bol = if start.line = 1 then loc_start.pos_bol else 0 in
-          { loc_start with
-            pos_bol
-          ; pos_lnum = loc_start.pos_lnum + start.line - 1
-          ; pos_cnum =
-              (if start.line = 1 then loc_start.pos_cnum + start.column else start.column)
-          }
-        in
-        let loc_end =
-          let pos_bol = if finish.line = 1 then loc_start.pos_bol else 0 in
-          { loc_start with
-            pos_bol
-          ; pos_lnum = loc_start.pos_lnum + finish.line - 1
-          ; pos_cnum =
-              (if finish.line = 1
-               then loc_start.pos_cnum + finish.column
-               else finish.column)
-          }
-        in
-        { loc with Location.loc_start; loc_end }
+    let odoc_parser =
+      (* The loc and comment passed in begin immediately after the opening
+         paren/star of the comment. Given that this is a doc comment, we need
+         to skip past that.
+      *)
+      let skip_padding = 1 in
+      let text = String.subo comment ~pos:skip_padding in
+      let location =
+        (* Without the extra 2, odoc's reported error locations are wrongly shifted.
+           I don't know why.
+        *)
+        { loc.Location.loc_start with
+          pos_cnum = loc.loc_start.pos_cnum + skip_padding + 2
+        }
       in
-      errorf
-        ~loc:octavius_loc
-        "%s\n\
-         You can look at http://caml.inria.fr/pub/docs/manual-ocaml/ocamldoc.html#sec318\n\
-         for a description of the recognized syntax."
-        octavius_msg
+      Odoc_parser.parse_comment ~location ~text
+    in
+    List.iter (Odoc_parser.warnings odoc_parser) ~f:(fun warning ->
+      (* A whitelist of odoc errors that we've deemed are OK and have grandfathered
+         into the linter.
+
+         Try to avoid adding to this list! Instead, fix the odoc syntax error in the
+         doc comment. You are invited to remove things from this list -- just note
+         that you'll have to go through and fix existing instances of that error message
+         in the tree.
+      *)
+      match warning.message with
+      | "Stray '@'." -> ()
+      | str
+        when String.is_suffix
+               str
+               ~suffix:"should be followed by space, a tab, or a new line."
+             || String.is_substring str ~substring:"bad markup"
+             || String.is_substring str ~substring:"Unknown tag"
+             || String.is_substring str ~substring:"Unpaired '}' (end of markup)." -> ()
+      | message ->
+        let warning_loc =
+          let { Odoc_parser.Loc.start; end_; file = _ } = warning.location in
+          let loc_start = Odoc_parser.position_of_point odoc_parser start in
+          let loc_end = Odoc_parser.position_of_point odoc_parser end_ in
+          { loc with loc_start; loc_end }
+        in
+        errorf
+          ~loc:warning_loc
+          "odoc syntax error.\n\
+           %s\n\
+           See https://ocaml.github.io/odoc/odoc_for_authors.html for odoc syntax help."
+          message)
   ;;
 
   let is_intf_dot_ml fname =
@@ -468,8 +481,8 @@ module Comments_checking = struct
         let intf = intf || is_intf_dot_ml loc.Location.loc_start.Lexing.pos_fname in
         if String.( <> ) comment ""
         then (
-          (* Ensures that all comments present in the file are either ocamldoc comments
-             or (*_ *) comments. *)
+          (* Ensures that all comments present in the file are either doc comments or (*_ *)
+           comments. *)
           if intf && not (can_appear_in_mli comment)
           then
             errorf
