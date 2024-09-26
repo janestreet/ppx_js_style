@@ -380,7 +380,7 @@ let enforce_cold =
         | exception _ -> acc
         | { Location.loc; txt = Lident "never" } ->
           Driver.Lint_error.of_string
-            loc
+            { loc with loc_ghost = true }
             "Attribute error: please use [@cold] instead of [@inline never]"
           :: acc
         | _ -> acc)
