@@ -192,13 +192,13 @@ module Constant = struct
         let has_underscore s = String.exists ~f:(fun c -> Char.( = ) c '_') s in
         fun s -> has_underscore s && not (has_double_underscores s)
       in
-      match c with
-      | Pconst_integer (s, _) ->
+      match Ppxlib_jane.Shim.Constant.of_parsetree c with
+      | Pconst_integer (s, _) | Pconst_unboxed_integer (s, _) ->
         if should_check s
         then (
           let kind, lower = parse_prefix s in
           check_segment ~name:"integer" ~start:(String.length s - 1) ~stop:lower ~kind s)
-      | Pconst_float (s, _) ->
+      | Pconst_float (s, _) | Pconst_unboxed_float (s, _) ->
         if should_check s
         then (
           let kind, lower = parse_prefix s in
@@ -380,7 +380,7 @@ let enforce_cold =
         | exception _ -> acc
         | { Location.loc; txt = Lident "never" } ->
           Driver.Lint_error.of_string
-            loc
+            { loc with loc_ghost = true }
             "Attribute error: please use [@cold] instead of [@inline never]"
           :: acc
         | _ -> acc)
