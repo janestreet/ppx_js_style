@@ -1,5 +1,35 @@
-open Base
+open Stdppx
 open Ppxlib
+
+module String = struct
+  include String
+
+  let is_substring t ~substring =
+    let open Int in
+    let len_t = String.length t in
+    let len_sub = String.length substring in
+    if len_sub = 0
+    then true
+    else if len_sub > len_t
+    then false
+    else (
+      let rec matches_at pos sub_pos =
+        if sub_pos = len_sub
+        then true
+        else if Char.equal (get t pos) (get substring sub_pos)
+        then matches_at (pos + 1) (sub_pos + 1)
+        else false
+      in
+      let rec is_substring_at pos =
+        if pos + len_sub > len_t
+        then false
+        else if matches_at pos 0
+        then true
+        else is_substring_at (pos + 1)
+      in
+      is_substring_at 0)
+  ;;
+end
 
 let annotated_ignores = ref true
 let check_comments = ref false
@@ -128,7 +158,7 @@ let ignored_expr_must_be_annotated ignored_reason (expr : Parsetree.expression) 
 ;;
 
 module Constant = struct
-  let max_int_31 = Int64.( - ) (Int64.shift_left 1L 30) 1L
+  let max_int_31 = Int64.sub (Int64.shift_left 1L 30) 1L
   let min_int_31 = Int64.neg (Int64.shift_left 1L 30)
 
   let check_compat_32 ~loc c =
@@ -141,7 +171,8 @@ module Constant = struct
       | Pconst_integer (s, None) ->
         (try
            let i = Int64.of_string s in
-           if Int64.(i < min_int_31 || i > max_int_31) then failwith "out of bound"
+           if Int64.(compare i min_int_31 < 0 || compare i max_int_31 > 0)
+           then failwith "out of bound"
          with
          | _ -> fail ~loc (Invalid_constant (s, "int")))
       | _ -> ())
@@ -163,7 +194,7 @@ module Constant = struct
             match s.[string_pos] with
             | '0' .. '9' | 'a' .. 'f' | 'A' .. 'F' -> number_offset + 1
             | '_' ->
-              if number_offset % modulo <> 0
+              if number_offset mod modulo <> 0
               then fail ~loc (Suspicious_literal (s, name))
               else number_offset
             | _ -> assert false
@@ -207,15 +238,15 @@ module Constant = struct
             let power_split =
               match kind with
               | `Decimal ->
-                String.lfindi s ~f:(fun _ c ->
-                  match c with
-                  | 'e' | 'E' -> true
-                  | _ -> false)
+                (match String.index_opt s 'e', String.index_opt s 'E' with
+                 | None, None -> None
+                 | None, (Some _ as some) | (Some _ as some), None -> some
+                 | Some a, Some b -> Some (min a b))
               | `Hexadecimal ->
-                String.lfindi s ~f:(fun _ c ->
-                  match c with
-                  | 'p' | 'P' -> true
-                  | _ -> false)
+                (match String.index_opt s 'p', String.index_opt s 'P' with
+                 | None, None -> None
+                 | None, (Some _ as some) | (Some _ as some), None -> some
+                 | Some a, Some b -> Some (min a b))
               | `Binary | `Octal -> assert false
             in
             match power_split with
@@ -223,7 +254,7 @@ module Constant = struct
             | Some i -> i - 1
           in
           let name = "float" in
-          match String.index_from s lower '.' with
+          match String.index_from_opt s lower '.' with
           | None -> check_segment ~name ~start:upper ~stop:lower ~kind s
           | Some i ->
             if lower <> i then check_segment ~name ~start:(i - 1) ~stop:lower ~kind s;
@@ -396,7 +427,7 @@ module Comments_checking = struct
   (* Assumption in the following functions: [s <> ""] *)
 
   let is_cr_comment s =
-    let s = String.strip s in
+    let s = String.trim s in
     String.is_prefix s ~prefix:"CR"
     || String.is_prefix s ~prefix:"XX"
     || String.is_prefix s ~prefix:"XCR"
@@ -404,7 +435,7 @@ module Comments_checking = struct
   ;;
 
   let is_mdx_comment s =
-    let s = String.strip s in
+    let s = String.trim s in
     String.is_prefix s ~prefix:"$MDX"
   ;;
 
@@ -427,7 +458,7 @@ module Comments_checking = struct
          to skip past that.
       *)
       let skip_padding = 1 in
-      let text = String.subo comment ~pos:skip_padding in
+      let text = String.sub comment ~pos:skip_padding ~len:(String.length comment - 1) in
       let location =
         (* Without the extra 2, odoc's reported error locations are wrongly shifted.
            I don't know why.
