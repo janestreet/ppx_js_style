@@ -498,7 +498,8 @@ module Comments_checking = struct
           ~loc:warning_loc
           "odoc syntax error.\n\
            %s\n\
-           See https://ocaml.github.io/odoc/odoc_for_authors.html for odoc syntax help."
+           See https://ocaml.github.io/odoc/odoc/odoc_for_authors.html for odoc syntax \
+           help."
           message)
   ;;
 
