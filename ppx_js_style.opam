@@ -13,9 +13,9 @@ depends: [
   "ocaml" {>= "5.1.0"}
   "ppxlib_jane"
   "dune"                {>= "3.17.0"}
-  "ocaml-compiler-libs" {= "v0.17.0+jst"}
+  "ocaml-compiler-libs" {= "v0.17.0+ox"}
   "odoc-parser"
-  "ppxlib"              {= "0.33.0+jst"}
+  "ppxlib"              {= "0.33.0+ox"}
 ]
 available: arch != "arm32" & arch != "x86_32"
 synopsis: "Code style checker for Jane Street Packages"
