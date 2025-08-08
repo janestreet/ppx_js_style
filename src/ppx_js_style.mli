@@ -36,3 +36,7 @@ type error =
 
 val iter_style_errors : f:(loc:Location.t -> error -> unit) -> Ast_traverse.iter
 val check : Ast_traverse.iter
+
+val check_modality_annotations
+  :  on_error:(loc:Location.t -> message:string -> 'a)
+  -> (unit, 'a list) result Ast_traverse.lift
