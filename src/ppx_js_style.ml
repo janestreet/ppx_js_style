@@ -261,7 +261,7 @@ module Constant = struct
           | Some i ->
             if lower <> i then check_segment ~name ~start:(i - 1) ~stop:lower ~kind s;
             if upper <> i then check_segment ~name ~start:(i + 1) ~stop:upper ~kind s)
-      | Pconst_char _ | Pconst_string _ -> ())
+      | Pconst_char _ | Pconst_untagged_char _ | Pconst_string _ -> ())
   ;;
 
   let check ~loc c =
@@ -465,7 +465,7 @@ let rec trivially_expand_ppx_template psg_items =
        let sig_ = Ppxlib_jane.Shim.Signature.of_parsetree sig_ in
        trivially_expand_ppx_template sig_.psg_items @ trivially_expand_ppx_template tl
      | Psig_attribute _
-       when Ppx_template_expander.Attributes.Floating.is_present Signature_item hd ->
+       when Ppx_template_expander.Attributes.Floating.Poly.is_present Signature_item hd ->
        let open Ast_builder.Default in
        let loc = hd.psig_loc in
        [ psig_include
