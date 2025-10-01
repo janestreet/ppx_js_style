@@ -39,6 +39,8 @@ let check_underscored_literal = ref true
 let cold_instead_of_inline_never = ref false
 let require_dated_deprecation = ref true
 let allow_letop_uses = ref false
+let allow_ignored_nonportable = ref false
+let raise_on_lint_error = ref false
 let errorf ~loc fmt = Location.raise_errorf ~loc (Stdlib.( ^^ ) "Jane Street style: " fmt)
 
 module Ignored_reason = struct
@@ -259,7 +261,7 @@ module Constant = struct
           | Some i ->
             if lower <> i then check_segment ~name ~start:(i - 1) ~stop:lower ~kind s;
             if upper <> i then check_segment ~name ~start:(i + 1) ~stop:upper ~kind s)
-      | Pconst_char _ | Pconst_string _ -> ())
+      | Pconst_char _ | Pconst_untagged_char _ | Pconst_string _ -> ())
   ;;
 
   let check ~loc c =
@@ -394,6 +396,272 @@ let iter_style_errors ~f =
 
 let check = iter_style_errors ~f:fail
 
+module Portability = struct
+  type t =
+    | Nonportable
+    | Unknown
+    | Portable
+
+  let apply_modality mode ~modality =
+    (* equivalent to [meet mode modality] *)
+    match mode, modality with
+    | Portable, _ | _, Portable -> Portable
+    | Unknown, _ | _, Unknown -> Unknown
+    | Nonportable, Nonportable -> Nonportable
+  ;;
+
+  let find_modal ~(unwrap_modal : 'a -> string) : 'a Loc.t list -> t Loc.t option =
+    fun modals ->
+    let portable_modal = ref None in
+    let unknown_modal = ref None in
+    List.iter modals ~f:(fun modal ->
+      let { txt = modal; loc } = Loc.map modal ~f:unwrap_modal in
+      match modal with
+      | "portable" -> portable_modal := Some { txt = Portable; loc }
+      | "nonportable" -> portable_modal := Some { txt = Nonportable; loc }
+      | _ -> unknown_modal := Some loc);
+    match !portable_modal, !unknown_modal with
+    | Some portability, _ -> Some portability
+    | _, Some loc -> Some { txt = Unknown; loc }
+    | None, None -> None
+  ;;
+
+  let find_mode = find_modal ~unwrap_modal:(fun (Ppxlib_jane.Mode mode) -> mode)
+
+  let find_modality =
+    find_modal ~unwrap_modal:(fun (Ppxlib_jane.Modality modality) -> modality)
+  ;;
+end
+
+include struct
+  open struct
+    let allow_redundant_modalities_attr ctx =
+      Ppxlib.Attribute.declare
+        "ppx_js_style.allow_redundant_modalities"
+        ctx
+        Ast_pattern.(pstr nil)
+        ()
+    ;;
+  end
+
+  let allow_redundant_modalities_pval = allow_redundant_modalities_attr Value_description
+  let allow_redundant_modalities_pmd = allow_redundant_modalities_attr Module_declaration
+end
+
+type sig_portability =
+  { sig_mode : Portability.t
+  ; default_modality : Portability.t
+  }
+
+(* performs a simplified version of template expansion on a signature, removing
+   [[%%template: ]] wrappers and replace [[@@@attr]] floating template attributes
+   with a single template instance (using [include sig ... end]). *)
+let rec trivially_expand_ppx_template psg_items =
+  match psg_items with
+  | [] -> []
+  | hd :: tl ->
+    (match hd.psig_desc with
+     | Psig_extension (({ txt = "template"; _ }, PSig sig_), _attrs) ->
+       let sig_ = Ppxlib_jane.Shim.Signature.of_parsetree sig_ in
+       trivially_expand_ppx_template sig_.psg_items @ trivially_expand_ppx_template tl
+     | Psig_attribute _
+       when Ppx_template_expander.Attributes.Floating.Poly.is_present Signature_item hd ->
+       let open Ast_builder.Default in
+       let loc = hd.psig_loc in
+       [ psig_include
+           ~loc
+           (include_infos ~loc (pmty_signature ~loc (trivially_expand_ppx_template tl)))
+       ]
+     | _ -> hd :: trivially_expand_ppx_template tl)
+;;
+
+let check_modality_annotations
+  (type err)
+  ~(on_error : loc:Location.t -> message:string -> err)
+  =
+  let ( let* ) res f = Result.bind ~f res in
+  let errorf ~loc fmt =
+    Printf.ksprintf
+      (fun message -> on_error ~loc ~message)
+      (Stdlib.( ^^ ) "Modality linting error: " fmt)
+  in
+  let result_list_all list =
+    List.fold_right list ~init:(Ok ()) ~f:(fun res acc ->
+      match res, acc with
+      | Ok (), Ok () -> Ok ()
+      | (Error _ as errs), Ok () | Ok (), (Error _ as errs) -> errs
+      | Error errs1, Error errs2 -> Error (errs1 @ errs2))
+  in
+  let ok : _ -> (unit, _) result = fun _ -> Ok () in
+  object (self)
+    inherit [(unit, err list) result] Ast_traverse.lift
+    method unit = ok
+    method bool = ok
+    method int = ok
+    method int32 = ok
+    method int64 = ok
+    method nativeint = ok
+    method float = ok
+    method char = ok
+    method string = ok
+    method other = ok
+    method tuple elts = result_list_all elts
+    method record fields = List.map fields ~f:snd |> result_list_all
+    method constr _name args = result_list_all args
+    method array f elts = Array.to_list elts |> List.map ~f |> result_list_all
+
+    method! signature original_sig =
+      (* Recur over the entire "current" signature (that is, the nodes which a default
+         modality on this signature would affect), only calling back into [super]
+         at signature "boundaries". *)
+      let rec loop : signature -> sig_mode:Portability.t -> (unit, err list) result =
+        fun original_sig ~sig_mode ->
+        let ({ psg_loc = _; psg_modalities; psg_items } : Ppxlib_jane.Shim.Signature.t) =
+          Ppxlib_jane.Shim.Signature.of_parsetree original_sig
+        in
+        let* sig_portability =
+          match sig_mode, Portability.find_modality psg_modalities with
+          | Portable, Some { txt = Portable | Nonportable; loc } ->
+            Error
+              [ errorf
+                  ~loc
+                  "This signature is forced portable by a containing signature, so the \
+                   default modality annotation does nothing."
+              ]
+          | _, Some { txt = Nonportable; loc } ->
+            Error
+              [ errorf ~loc "Using [nonportable] as a default modality has no effect." ]
+          | sig_mode, default_modality ->
+            let default_modality =
+              match default_modality with
+              | Some { txt = default_modality; _ } -> default_modality
+              | None -> Nonportable
+            in
+            Ok { sig_mode; default_modality }
+        in
+        let signature_item_mode modalities ~allow_redundant_modalities =
+          match Portability.find_modality modalities, sig_portability with
+          | Some { txt = _; loc }, { sig_mode = Portable; _ } ->
+            Error [ errorf ~loc "This modality annotation is ignored." ]
+          | Some { txt = Portable; loc }, { default_modality = Portable; _ }
+            when not allow_redundant_modalities ->
+            Error [ errorf ~loc "This portable annotation is redundant." ]
+          | Some { txt = Nonportable; loc }, { default_modality = Nonportable; _ }
+            when not allow_redundant_modalities ->
+            Error [ errorf ~loc "This nonportable annotation is redundant." ]
+          | modality, { sig_mode; default_modality } ->
+            let modality =
+              match modality with
+              | Some { txt; _ } -> txt
+              | None -> default_modality
+            in
+            Ok (Portability.apply_modality sig_mode ~modality)
+        in
+        let rec loop_pmty { pmty_desc; _ } ~sig_mode =
+          match Ppxlib_jane.Shim.Module_type_desc.of_parsetree pmty_desc with
+          | Pmty_signature sig_ -> loop sig_ ~sig_mode
+          | Pmty_strengthen (pmty, _) | Pmty_with (pmty, _) -> loop_pmty pmty ~sig_mode
+          | Pmty_functor (param, return_type, modes) ->
+            let param_res =
+              match Ppxlib_jane.Shim.Functor_parameter.of_parsetree param with
+              | Unit -> Ok ()
+              | Named (_name, pmty, modes) ->
+                let sig_mode =
+                  match Portability.find_mode modes with
+                  | Some { txt = mode; _ } -> mode
+                  | None -> Nonportable
+                in
+                loop_pmty pmty ~sig_mode
+            in
+            let return_res =
+              let sig_mode =
+                match Portability.find_mode modes with
+                | Some { txt = mode; _ } -> mode
+                | None -> Nonportable
+              in
+              loop_pmty return_type ~sig_mode
+            in
+            result_list_all [ param_res; return_res ]
+          | Pmty_ident _ | Pmty_typeof _ | Pmty_extension _ | Pmty_alias _ -> Ok ()
+        in
+        let check_pmd pmd =
+          let pmd, allow_redundant_modalities =
+            match Attribute.consume allow_redundant_modalities_pmd pmd with
+            | None -> pmd, false
+            | Some (pmd, ()) -> pmd, true
+          in
+          let pmd = Ppxlib_jane.Shim.Module_declaration.of_parsetree pmd in
+          let* sub_module_mode =
+            signature_item_mode pmd.pmd_modalities ~allow_redundant_modalities
+          in
+          loop_pmty pmd.pmd_type ~sig_mode:sub_module_mode
+        in
+        let check_sigi sigi =
+          match Ppxlib_jane.Shim.Signature_item_desc.of_parsetree sigi.psig_desc with
+          | Psig_module pmd -> check_pmd pmd
+          | Psig_recmodule pmds -> List.map pmds ~f:check_pmd |> result_list_all
+          | Psig_include (incl, modalities) ->
+            let ({ pincl_kind; pincl_mod; pincl_loc = _; pincl_attributes = _ }
+                  : _ Ppxlib_jane.Shim.Include_infos.t)
+              =
+              Ppxlib_jane.Shim.Include_infos.of_parsetree incl
+            in
+            (match pincl_kind with
+             | Structure ->
+               let* include_mode =
+                 signature_item_mode modalities ~allow_redundant_modalities:false
+               in
+               loop_pmty pincl_mod ~sig_mode:include_mode
+             | Functor -> Ok ())
+          | Psig_value vd ->
+            let vd, allow_redundant_modalities =
+              match Attribute.consume allow_redundant_modalities_pval vd with
+              | None -> vd, false
+              | Some (vd, ()) -> vd, true
+            in
+            let modalities, _vd =
+              Ppxlib_jane.Shim.Value_description.extract_modalities_with_locs vd
+            in
+            let* _ = signature_item_mode modalities ~allow_redundant_modalities in
+            self#signature_item sigi
+          | Psig_extension ((_, PSig sig_), _attrs) ->
+            (* Be more cautious when we meet an extension node; we don't know what is done
+               with the payload *)
+            loop sig_ ~sig_mode:Unknown
+          | Psig_extension _
+          | Psig_type _
+          | Psig_typesubst _
+          | Psig_typext _
+          | Psig_exception _
+          | Psig_modsubst _
+          | Psig_modtype _
+          | Psig_modtypesubst _
+          | Psig_open _
+          | Psig_class _
+          | Psig_class_type _
+          | Psig_attribute _
+          | Psig_kind_abbrev _ ->
+            (* This is the boundary of the current signature, but keep recurring from here
+               to find more nested signatures. *)
+            self#signature_item sigi
+        in
+        let psg_items = trivially_expand_ppx_template psg_items in
+        List.map psg_items ~f:check_sigi |> result_list_all
+      in
+      loop original_sig ~sig_mode:Nonportable
+  end
+;;
+
+let lint_error ~loc str = Driver.Lint_error.of_string { loc with loc_ghost = true } str
+
+let check_modality_annotations_lint ~raise_on_lint_error =
+  if raise_on_lint_error
+  then
+    check_modality_annotations ~on_error:(fun ~loc ~message ->
+      Location.raise_errorf ~loc "%s" message)
+  else check_modality_annotations ~on_error:(fun ~loc ~message -> lint_error ~loc message)
+;;
+
 let enforce_cold =
   object
     inherit [Driver.Lint_error.t list] Ast_traverse.fold
@@ -410,9 +678,7 @@ let enforce_cold =
         with
         | exception _ -> acc
         | { Location.loc; txt = Lident "never" } ->
-          Driver.Lint_error.of_string
-            { loc with loc_ghost = true }
-            "Attribute error: please use [@cold] instead of [@inline never]"
+          lint_error ~loc "Attribute error: please use [@cold] instead of [@inline never]"
           :: acc
         | _ -> acc)
       else acc
@@ -641,8 +907,58 @@ let () =
 ;;
 
 let () =
+  Driver.add_arg
+    "-allow-ignored-nonportable-modality"
+    (Set allow_ignored_nonportable)
+    ~doc:" Do not warn on modalities that are likely incorrectly placed."
+;;
+
+let () =
+  Driver.add_arg
+    "-raise-on-lint-error"
+    (Set raise_on_lint_error)
+    ~doc:
+      " Report an error during linting rather than injecting an error node. This is \
+       particularly useful when using the [lint] dune stanza, which ignores typical lint \
+       errors."
+;;
+
+let () =
   Driver.register_transformation
     "js_style"
+    ~lint_intf:(fun sg ->
+      let lint_modalities_errors =
+        if !allow_ignored_nonportable
+        then []
+        else (
+          match
+            (check_modality_annotations_lint ~raise_on_lint_error:!raise_on_lint_error)
+              #signature
+              sg
+          with
+          | Ok () -> []
+          | Error errs -> errs)
+      in
+      List.concat [ lint_modalities_errors ])
+    ~lint_impl:(fun st ->
+      let lint_cold_errors =
+        (* note: we do not use ~impl because we want the check to run before ppx
+           processing (ppx_cold will replace `[@cold]` with `[@inline never] ...`)*)
+        enforce_cold#structure st []
+      in
+      let lint_modalities_errors =
+        if !allow_ignored_nonportable
+        then []
+        else (
+          match
+            (check_modality_annotations_lint ~raise_on_lint_error:!raise_on_lint_error)
+              #structure
+              st
+          with
+          | Ok () -> []
+          | Error errs -> errs)
+      in
+      List.concat [ lint_cold_errors; lint_modalities_errors ])
     ~intf:(fun sg ->
       check#signature sg;
       if !check_comments then Comments_checking.check_all ~intf:true ();
@@ -651,7 +967,4 @@ let () =
       check#structure st;
       if !check_comments then Comments_checking.check_all ();
       st)
-      (* note: we do not use ~impl because we want the check to run before ppx
-       processing (ppx_cold will replace `[@cold]` with `[@inline never] ...`)*)
-    ~lint_impl:(fun st -> enforce_cold#structure st [])
 ;;

@@ -11,6 +11,7 @@ build: [
 ]
 depends: [
   "ocaml" {>= "5.1.0"}
+  "ppx_template"
   "ppxlib_jane"
   "dune"                {>= "3.17.0"}
   "ocaml-compiler-libs" {= "v0.17.0+ox"}
