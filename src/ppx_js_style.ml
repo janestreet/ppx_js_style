@@ -121,7 +121,6 @@ let ignored_expr_must_be_annotated ignored_reason (expr : Parsetree.expression) 
   (* no need to warn people trying to silence other warnings *)
   | Pexp_construct _
   | Pexp_ident _
-  | Pexp_fun _
   | Pexp_function _ -> ()
   | _ -> f ~loc:expr.pexp_loc (Missing_type_annotation ignored_reason)
 ;;
