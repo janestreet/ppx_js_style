@@ -601,3 +601,323 @@ end
   [%expect {| ok |}];
   ()
 ;;
+
+let%expect_test "warn on field modalities which have no effect (likely a mistake)" =
+  require_failure
+    {|
+type t = { x : string @@ local; y : string @@ global }
+|};
+  [%expect
+    {|
+    File "", line 1, characters 25-30:
+    Modality linting error: This modality annotation has no effect; it is the default modality for its mode-axis.
+    ```
+    type t = { x : string @@ local; y : string @@ global }
+                             ^^^^^
+    ```
+    |}];
+  require_failure
+    {|
+module type T = sig
+  type t = { x : string @@ unique }
+end
+|};
+  [%expect
+    {|
+    File "", line 2, characters 27-33:
+    Modality linting error: This modality annotation has no effect; it is the default modality for its mode-axis.
+    ```
+    module type T = sig
+      type t = { x : string @@ unique }
+                               ^^^^^^
+    end
+    ```
+    |}];
+  require_failure
+    {|
+type t = T of string @@ local * bool @@ unique * int @@ yielding
+|};
+  [%expect
+    {|
+    File "", line 1, characters 24-29:
+    Modality linting error: This modality annotation has no effect; it is the default modality for its mode-axis.
+    ```
+    type t = T of string @@ local * bool @@ unique * int @@ yielding
+                            ^^^^^
+    ```
+    File "", line 1, characters 40-46:
+    Modality linting error: This modality annotation has no effect; it is the default modality for its mode-axis.
+    ```
+    type t = T of string @@ local * bool @@ unique * int @@ yielding
+                                            ^^^^^^
+    ```
+    File "", line 1, characters 56-64:
+    Modality linting error: This modality annotation has no effect; it is the default modality for its mode-axis.
+    ```
+    type t = T of string @@ local * bool @@ unique * int @@ yielding
+                                                            ^^^^^^^^
+    ```
+    |}];
+  (* mutable fields have different default modalities *)
+  require_failure
+    {|
+type t =
+  { mutable x : string @@ global
+  ; mutable y : string @@ aliased
+  ; mutable z : string @@ unyielding }
+|};
+  [%expect
+    {|
+    File "", line 2, characters 26-32:
+    Modality linting error: This modality annotation has no effect; it is the default modality on mutable fields for its mode-axis.
+    ```
+    type t =
+      { mutable x : string @@ global
+                              ^^^^^^
+      ; mutable y : string @@ aliased
+      ; mutable z : string @@ unyielding }
+    ```
+    File "", line 3, characters 26-33:
+    Modality linting error: This modality annotation has no effect; it is the default modality on mutable fields for its mode-axis.
+    ```
+    type t =
+      { mutable x : string @@ global
+      ; mutable y : string @@ aliased
+                              ^^^^^^^
+      ; mutable z : string @@ unyielding }
+    ```
+    File "", line 4, characters 26-36:
+    Modality linting error: This modality annotation has no effect; it is the default modality on mutable fields for its mode-axis.
+    ```
+    type t =
+      { mutable x : string @@ global
+      ; mutable y : string @@ aliased
+      ; mutable z : string @@ unyielding }
+                              ^^^^^^^^^^
+    ```
+    |}];
+  require_failure
+    {|
+type t =
+    T of
+      { mutable x : string @@ global
+      ; mutable y : string @@ aliased
+      ; mutable z : string @@ unyielding }
+|};
+  [%expect
+    {|
+    File "", line 3, characters 30-36:
+    Modality linting error: This modality annotation has no effect; it is the default modality on mutable fields for its mode-axis.
+    ```
+    type t =
+        T of
+          { mutable x : string @@ global
+                                  ^^^^^^
+          ; mutable y : string @@ aliased
+          ; mutable z : string @@ unyielding }
+    ```
+    File "", line 4, characters 30-37:
+    Modality linting error: This modality annotation has no effect; it is the default modality on mutable fields for its mode-axis.
+    ```
+    type t =
+        T of
+          { mutable x : string @@ global
+          ; mutable y : string @@ aliased
+                                  ^^^^^^^
+          ; mutable z : string @@ unyielding }
+    ```
+    File "", line 5, characters 30-40:
+    Modality linting error: This modality annotation has no effect; it is the default modality on mutable fields for its mode-axis.
+    ```
+    type t =
+        T of
+          { mutable x : string @@ global
+          ; mutable y : string @@ aliased
+          ; mutable z : string @@ unyielding }
+                                  ^^^^^^^^^^
+    ```
+    |}];
+  ()
+;;
+
+let%expect_test "implied modalities" =
+  (* the default for the yielding axis switches when locality modality is present *)
+  require_failure
+    {|
+type t =
+  { x : string @@ global unyielding
+  ; mutable x_mut : string @@ local yielding
+  }
+|};
+  [%expect
+    {|
+    File "", line 2, characters 25-35:
+    Modality linting error: This modality annotation has no effect; the global modality implies unyielding.
+    ```
+    type t =
+      { x : string @@ global unyielding
+                             ^^^^^^^^^^
+      ; mutable x_mut : string @@ local yielding
+      }
+    ```
+    File "", line 3, characters 36-44:
+    Modality linting error: This modality annotation has no effect; the local modality implies yielding.
+    ```
+    type t =
+      { x : string @@ global unyielding
+      ; mutable x_mut : string @@ local yielding
+                                        ^^^^^^^^
+      }
+    ```
+    |}];
+  require_success
+    {|
+type t =
+  { x : string @@ global yielding
+  ; mutable y : string @@ local unyielding
+  }
+|};
+  [%expect {| ok |}];
+  (* visibility implies contention *)
+  require_failure
+    {|
+type t =
+  { read : string @@ read shared
+  ; mutable read_mut : string @@ read shared
+  ; immutable : string @@ immutable contended
+  ; mutable immutable_mut : string @@ immutable contended
+  }
+|};
+  [%expect
+    {|
+    File "", line 2, characters 26-32:
+    Modality linting error: This modality annotation has no effect; the read modality implies shared.
+    ```
+    type t =
+      { read : string @@ read shared
+                              ^^^^^^
+      ; mutable read_mut : string @@ read shared
+      ; immutable : string @@ immutable contended
+      ; mutable immutable_mut : string @@ immutable contended
+      }
+    ```
+    File "", line 3, characters 38-44:
+    Modality linting error: This modality annotation has no effect; the read modality implies shared.
+    ```
+    type t =
+      { read : string @@ read shared
+      ; mutable read_mut : string @@ read shared
+                                          ^^^^^^
+      ; immutable : string @@ immutable contended
+      ; mutable immutable_mut : string @@ immutable contended
+      }
+    ```
+    File "", line 4, characters 36-45:
+    Modality linting error: This modality annotation has no effect; the immutable modality implies contended.
+    ```
+    type t =
+      { read : string @@ read shared
+      ; mutable read_mut : string @@ read shared
+      ; immutable : string @@ immutable contended
+                                        ^^^^^^^^^
+      ; mutable immutable_mut : string @@ immutable contended
+      }
+    ```
+    File "", line 5, characters 48-57:
+    Modality linting error: This modality annotation has no effect; the immutable modality implies contended.
+    ```
+    type t =
+      { read : string @@ read shared
+      ; mutable read_mut : string @@ read shared
+      ; immutable : string @@ immutable contended
+      ; mutable immutable_mut : string @@ immutable contended
+                                                    ^^^^^^^^^
+      }
+    ```
+    |}];
+  require_success
+    {|
+type t =
+  { read1 : string @@ read uncontended
+  ; read2 : string @@ read contended
+  ; immutable1 : string @@ immutable uncontended
+  ; immutable2 : string @@ immutable shared
+  }
+|};
+  (* statefulness implies portability *)
+  require_failure
+    {|
+type t =
+  { stateless : string @@ stateless portable
+  ; mutable stateless_mut : string @@ stateless portable
+  }
+|};
+  [%expect
+    {|
+    ok
+    File "", line 2, characters 36-44:
+    Modality linting error: This modality annotation has no effect; the stateless modality implies portable.
+    ```
+    type t =
+      { stateless : string @@ stateless portable
+                                        ^^^^^^^^
+      ; mutable stateless_mut : string @@ stateless portable
+      }
+    ```
+    File "", line 3, characters 48-56:
+    Modality linting error: This modality annotation has no effect; the stateless modality implies portable.
+    ```
+    type t =
+      { stateless : string @@ stateless portable
+      ; mutable stateless_mut : string @@ stateless portable
+                                                    ^^^^^^^^
+      }
+    ```
+    |}];
+  require_success
+    {|
+type t =
+  { observing : string @@ observing portable
+  ; nonportable : string @@ stateless nonportable
+  }
+|};
+  [%expect {| ok |}];
+  ()
+;;
+
+let%expect_test "misc other tests" =
+  (* errors on non-exempted label declarations still appear *)
+  require_failure
+    {|
+type t =
+  { x : string @@ local [@allow_redundant_modalities "only x"]
+  ; y : string @@ local
+  }
+    |};
+  [%expect
+    {|
+    File "", line 3, characters 18-23:
+    Modality linting error: This modality annotation has no effect; it is the default modality for its mode-axis.
+    ```
+    type t =
+      { x : string @@ local [@allow_redundant_modalities "only x"]
+      ; y : string @@ local
+                      ^^^^^
+      }
+
+    ```
+    |}];
+  (* can except from check *)
+  require_success
+    {|
+type t = { x : string @@ local } [@@allow_redundant_modalities]
+
+type t = { x : string @@ local [@allow_redundant_modalities] }
+
+type t = T of string @@ local [@allow_redundant_modalities]
+
+val x : unit -> unit @@ nonportable [@@allow_redundant_modalities]
+|};
+  [%expect {| ok |}];
+  ()
+;;

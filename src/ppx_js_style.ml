@@ -1,5 +1,6 @@
 open Stdppx
 open Ppxlib
+open Ppxlib_jane
 
 module String = struct
   include String
@@ -39,7 +40,7 @@ let check_underscored_literal = ref true
 let cold_instead_of_inline_never = ref false
 let require_dated_deprecation = ref true
 let allow_letop_uses = ref false
-let allow_ignored_nonportable = ref false
+let allow_redundant_modalities = ref false
 let raise_on_lint_error = ref false
 let errorf ~loc fmt = Location.raise_errorf ~loc (Stdlib.( ^^ ) "Jane Street style: " fmt)
 
@@ -439,13 +440,19 @@ include struct
       Ppxlib.Attribute.declare
         "ppx_js_style.allow_redundant_modalities"
         ctx
-        Ast_pattern.(pstr nil)
+        Ast_pattern.drop
         ()
     ;;
   end
 
   let allow_redundant_modalities_pval = allow_redundant_modalities_attr Value_description
   let allow_redundant_modalities_pmd = allow_redundant_modalities_attr Module_declaration
+  let allow_redundant_modalities_ptype = allow_redundant_modalities_attr Type_declaration
+  let allow_redundant_modalities_pld = allow_redundant_modalities_attr Label_declaration
+
+  let allow_redundant_modalities_pcd =
+    allow_redundant_modalities_attr Constructor_declaration
+  ;;
 end
 
 type sig_portability =
@@ -469,8 +476,12 @@ let rec trivially_expand_ppx_template psg_items =
        let open Ast_builder.Default in
        let loc = hd.psig_loc in
        [ psig_include
+           ~modalities:[]
            ~loc
-           (include_infos ~loc (pmty_signature ~loc (trivially_expand_ppx_template tl)))
+           (include_infos
+              ~kind:Structure
+              ~loc
+              (pmty_signature ~loc (signature ~loc (trivially_expand_ppx_template tl))))
        ]
      | _ -> hd :: trivially_expand_ppx_template tl)
 ;;
@@ -492,9 +503,58 @@ let check_modality_annotations
       | (Error _ as errs), Ok () | Ok (), (Error _ as errs) -> errs
       | Error errs1, Error errs2 -> Error (errs1 @ errs2))
   in
+  let check_modalities modalities ~mut =
+    let is_present modality =
+      List.exists modalities ~f:(fun { txt = Modality modality'; _ } ->
+        String.equal modality modality')
+    in
+    let is_redundant modality =
+      match (mut : mutable_flag), modality with
+      | Immutable, ("local" | "stateful" | "read_write" | "unique" | "once") ->
+        Error "it is the default modality for its mode-axis."
+      | Mutable, ("global" | "stateful" | "read_write" | "aliased" | "many") ->
+        Error "it is the default modality on mutable fields for its mode-axis."
+      | Immutable, (("unyielding" | "yielding") as yielding) ->
+        (match is_present "global", yielding with
+         | true, "unyielding" -> Error "the global modality implies unyielding."
+         | false, "yielding" -> Error "it is the default modality for its mode-axis."
+         | _ -> Ok ())
+      | Mutable, (("unyielding" | "yielding") as yielding) ->
+        (match is_present "local", yielding with
+         | true, "yielding" -> Error "the local modality implies yielding."
+         | false, "unyielding" ->
+           Error "it is the default modality on mutable fields for its mode-axis."
+         | _ -> Ok ())
+      | _, "uncontended" ->
+        if is_present "read" || is_present "immutable"
+        then Ok ()
+        else Error "it is the default modality for its mode-axis"
+      | _, "shared" ->
+        if is_present "read" then Error "the read modality implies shared." else Ok ()
+      | _, "contended" ->
+        if is_present "immutable"
+        then Error "the immutable modality implies contended."
+        else Ok ()
+      | _, "nonportable" ->
+        if is_present "stateless"
+        then Ok ()
+        else Error "it is the default modality for its mode-axis"
+      | _, "portable" ->
+        if is_present "stateless"
+        then Error "the stateless modality implies portable."
+        else Ok ()
+      | _ -> Ok ()
+    in
+    List.map modalities ~f:(fun { txt = Modality modality; loc } ->
+      match is_redundant modality with
+      | Ok () -> Ok ()
+      | Error hint ->
+        Error [ errorf ~loc "This modality annotation has no effect; %s" hint ])
+    |> result_list_all
+  in
   let ok : _ -> (unit, _) result = fun _ -> Ok () in
   object (self)
-    inherit [(unit, err list) result] Ast_traverse.lift
+    inherit [(unit, err list) result] Ast_traverse.lift as super
     method unit = ok
     method bool = ok
     method int = ok
@@ -509,6 +569,43 @@ let check_modality_annotations
     method record fields = List.map fields ~f:snd |> result_list_all
     method constr _name args = result_list_all args
     method array f elts = Array.to_list elts |> List.map ~f |> result_list_all
+
+    method! type_declaration td =
+      if Attribute.has_flag allow_redundant_modalities_ptype td
+      then Ok ()
+      else super#type_declaration td
+
+    method! jkind_annotation_desc =
+      function
+      | Pjk_mod (jkind_annotation, modes) ->
+        let* () = self#jkind_annotation jkind_annotation in
+        let* () =
+          List.map modes ~f:(Loc.map ~f:(fun (Mode modal) -> Modality modal))
+          |> self#modalities
+        in
+        Ok ()
+      | desc -> super#jkind_annotation_desc desc
+
+    method! modalities modalities = check_modalities modalities ~mut:Immutable
+
+    method! label_declaration ld =
+      if Attribute.has_flag allow_redundant_modalities_pld ld
+      then Ok ()
+      else (
+        (* Specially handle [label_declaration]s since they might be mutable. *)
+        let modalities, ld = Ppxlib_jane.Shim.Label_declaration.extract_modalities ld in
+        let* () = check_modalities modalities ~mut:ld.pld_mutable in
+        super#label_declaration ld)
+
+    method! constructor_declaration cd =
+      if Attribute.has_flag allow_redundant_modalities_pcd cd
+      then Ok ()
+      else super#constructor_declaration cd
+
+    method! signature_item sigi =
+      (* don't put logic in here; this method is skipped for a lot of signature_items
+         in the manual recursion below *)
+      super#signature_item sigi
 
     method! signature original_sig =
       (* Recur over the entire "current" signature (that is, the nodes which a default
@@ -619,17 +716,20 @@ let check_modality_annotations
               | None -> vd, false
               | Some (vd, ()) -> vd, true
             in
-            let modalities, _vd =
-              Ppxlib_jane.Shim.Value_description.extract_modalities_with_locs vd
+            let modalities, vd =
+              Ppxlib_jane.Shim.Value_description.extract_modalities vd
             in
             let* _ = signature_item_mode modalities ~allow_redundant_modalities in
-            self#signature_item sigi
+            self#signature_item { sigi with psig_desc = Psig_value vd }
           | Psig_extension ((_, PSig sig_), _attrs) ->
             (* Be more cautious when we meet an extension node; we don't know what is done
                with the payload *)
             loop sig_ ~sig_mode:Unknown
+          | Psig_type _ ->
+            (* If this branch gets specialized logic, make sure it still calls into
+               [#type_declaration]. *)
+            self#signature_item sigi
           | Psig_extension _
-          | Psig_type _
           | Psig_typesubst _
           | Psig_typext _
           | Psig_exception _
@@ -908,9 +1008,9 @@ let () =
 
 let () =
   Driver.add_arg
-    "-allow-ignored-nonportable-modality"
-    (Set allow_ignored_nonportable)
-    ~doc:" Do not warn on modalities that are likely incorrectly placed."
+    "-allow-redundant-modalities"
+    (Set allow_redundant_modalities)
+    ~doc:" Do not warn on modalities that are likely incorrectly used."
 ;;
 
 let () =
@@ -928,7 +1028,7 @@ let () =
     "js_style"
     ~lint_intf:(fun sg ->
       let lint_modalities_errors =
-        if !allow_ignored_nonportable
+        if !allow_redundant_modalities
         then []
         else (
           match
@@ -947,7 +1047,7 @@ let () =
         enforce_cold#structure st []
       in
       let lint_modalities_errors =
-        if !allow_ignored_nonportable
+        if !allow_redundant_modalities
         then []
         else (
           match
