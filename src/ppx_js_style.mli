@@ -1,4 +1,4 @@
-open Ppxlib
+open Ppxlib_jane
 
 module Ignored_reason : sig
   type t =
