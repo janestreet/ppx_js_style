@@ -461,8 +461,8 @@ type sig_portability =
   }
 
 (* performs a simplified version of template expansion on a signature, removing
-   [[%%template: ]] wrappers and replace [[@@@attr]] floating template attributes
-   with a single template instance (using [include sig ... end]). *)
+   [[%%template: ]] wrappers and replace [[@@@attr]] floating template attributes with a
+   single template instance (using [include sig ... end]). *)
 let rec trivially_expand_ppx_template psg_items =
   match psg_items with
   | [] -> []
@@ -603,14 +603,14 @@ let check_modality_annotations
       else super#constructor_declaration cd
 
     method! signature_item sigi =
-      (* don't put logic in here; this method is skipped for a lot of signature_items
-         in the manual recursion below *)
+      (* don't put logic in here; this method is skipped for a lot of signature_items in
+         the manual recursion below *)
       super#signature_item sigi
 
     method! signature original_sig =
       (* Recur over the entire "current" signature (that is, the nodes which a default
-         modality on this signature would affect), only calling back into [super]
-         at signature "boundaries". *)
+         modality on this signature would affect), only calling back into [super] at
+         signature "boundaries". *)
       let rec loop : signature -> sig_mode:Portability.t -> (unit, err list) result =
         fun original_sig ~sig_mode ->
         let ({ psg_loc = _; psg_modalities; psg_items } : Ppxlib_jane.Shim.Signature.t) =
@@ -819,15 +819,14 @@ module Comments_checking = struct
 
   let syntax_check_doc_comment ~loc comment =
     let odoc_parser =
-      (* The loc and comment passed in begin immediately after the opening
-         paren/star of the comment. Given that this is a doc comment, we need
-         to skip past that.
+      (* The loc and comment passed in begin immediately after the opening paren/star of
+         the comment. Given that this is a doc comment, we need to skip past that.
       *)
       let skip_padding = 1 in
       let text = String.sub comment ~pos:skip_padding ~len:(String.length comment - 1) in
       let location =
-        (* Without the extra 2, odoc's reported error locations are wrongly shifted.
-           I don't know why.
+        (* Without the extra 2, odoc's reported error locations are wrongly shifted. I
+           don't know why.
         *)
         { loc.Location.loc_start with
           pos_cnum = loc.loc_start.pos_cnum + skip_padding + 2
@@ -879,8 +878,8 @@ module Comments_checking = struct
         let intf = intf || is_intf_dot_ml loc.Location.loc_start.Lexing.pos_fname in
         if String.( <> ) comment ""
         then (
-          (* Ensures that all comments present in the file are either doc comments or (*_ *)
-           comments. *)
+          (* Ensures that all comments present in the file are either doc comments or
+             (*_ *) comments. *)
           if intf && not (can_appear_in_mli comment)
           then
             errorf
@@ -896,9 +895,9 @@ let () =
   (* We rely on the fact that let%test and similar things are preprocessed before we run,
      because ppx_driver applies the [~extension] arguments of
      [Driver.register_transformation] before applying the [~impl] argument that
-     ppx_js_style uses.
-     It means that [let%test _ = ..] doesn't count as unannotated ignore, although
-     [let%bind _ = ..] also doesn't count as unannotated ignore for the same reason. *)
+     ppx_js_style uses. It means that [let%test _ = ..] doesn't count as unannotated
+     ignore, although [let%bind _ = ..] also doesn't count as unannotated ignore for the
+     same reason. *)
   Driver.add_arg
     "-annotated-ignores"
     (Set annotated_ignores)
@@ -924,12 +923,12 @@ let () =
     ~doc:" If set, checks that all constants are representable on 32bit architectures."
 ;;
 
-(* Enable warning 50 by default, one can opt-out with [-dont-check-doc-comments-attachment] *)
+(* Enable warning 50 by default, one can opt-out with
+   [-dont-check-doc-comments-attachment] *)
 let () =
-  (* A bit hackish: as we're running ppx_driver with -pp the parsing is done
-     by ppx_driver and not ocaml itself, so giving "-w @50" to ocaml (as we
-     did up to now) had no incidence.
-     We want to enable the warning here. For some reason one can't just enable
+  (* A bit hackish: as we're running ppx_driver with -pp the parsing is done by ppx_driver
+     and not ocaml itself, so giving "-w @50" to ocaml (as we did up to now) had no
+     incidence. We want to enable the warning here. For some reason one can't just enable
      a warning programatically, one has to call [parse_options]... *)
   ignore (Ocaml_common.Warnings.parse_options false "+50")
 ;;
@@ -1043,7 +1042,7 @@ let () =
     ~lint_impl:(fun st ->
       let lint_cold_errors =
         (* note: we do not use ~impl because we want the check to run before ppx
-           processing (ppx_cold will replace `[@cold]` with `[@inline never] ...`)*)
+           processing (ppx_cold will replace `[@cold]` with `[@inline never] ...`) *)
         enforce_cold#structure st []
       in
       let lint_modalities_errors =
