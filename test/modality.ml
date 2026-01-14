@@ -3,8 +3,8 @@ open! Expect_test_helpers_base
 module Format = Stdlib.Format
 
 module Helpers : sig
-  val require_success : here:[%call_pos] -> string -> unit
-  val require_failure : here:[%call_pos] -> string -> unit
+  val require_success : here:[%call_pos] -> ?cr:CR.t -> string -> unit
+  val require_failure : here:[%call_pos] -> ?cr:CR.t -> string -> unit
 end = struct
   let check_portable =
     Ppx_js_style.check_modality_annotations ~on_error:(fun ~loc ~message ->
@@ -56,19 +56,19 @@ end = struct
       print_underline_loc original_code ~loc)
   ;;
 
-  let require_success ~(here : [%call_pos]) str =
+  let require_success ~(here : [%call_pos]) ?cr str =
     let str = cleanup_input str in
     match parse_and_lint str with
     | Ok () -> print_endline "ok"
     | Error errs ->
-      print_cr ~here (Atom "Expected no error, got error:");
+      print_cr ~here ?cr (Atom "Expected no error, got error:");
       print_errors ~original_code:str errs
   ;;
 
-  let require_failure ~(here : [%call_pos]) str =
+  let require_failure ~(here : [%call_pos]) ?cr str =
     let str = cleanup_input str in
     match parse_and_lint str with
-    | Ok () -> print_cr ~here (Atom "Expected error, got none.")
+    | Ok () -> print_cr ~here ?cr (Atom "Expected error, got none.")
     | Error errs -> print_errors ~original_code:str errs
   ;;
 end
@@ -919,5 +919,44 @@ type t = T of string @@ local [@allow_redundant_modalities]
 val x : unit -> unit @@ nonportable [@@allow_redundant_modalities]
 |};
   [%expect {| ok |}];
+  ()
+;;
+
+let%expect_test "regression: don't modality lint metaquot" =
+  require_success
+    {|
+val x : [%sig: module (T @@ nonportable) : U]
+|};
+  [%expect {| ok |}];
+  require_failure
+    {|
+
+val x : [%unknown_ppx: module (T @@ nonportable) : U]
+|};
+  [%expect
+    {|
+    File "", line 2, characters 36-47:
+    Modality linting error: This nonportable annotation is redundant.
+    ```
+
+    val x : [%unknown_ppx: module (T @@ nonportable) : U]
+                                        ^^^^^^^^^^^
+    ```
+    |}];
+  ()
+;;
+
+let%expect_test "linting should descend into [module type of]" =
+  require_failure
+    ~cr:CR_soon
+    {|
+include module type of struct
+  module type T = sig @@ nonportable end
+end
+|};
+  [%expect
+    {|
+    "Expected error, got none."
+    |}];
   ()
 ;;

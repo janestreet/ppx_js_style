@@ -570,6 +570,20 @@ let check_modality_annotations
     method constr _name args = result_list_all args
     method array f elts = Array.to_list elts |> List.map ~f |> result_list_all
 
+    method! extension (({ txt = label; loc = _ }, _) as ext) =
+      (* Generally metaquot is eventually in the context of a larger program in which a
+         modality may no longer be redundant, so conservatively allow it.
+
+         Feel free to add other ppxes to this list as relevant. *)
+      let label =
+        match String.split_on_char label ~sep:'.' |> List.last with
+        | Some x -> x
+        | None -> assert false
+      in
+      match label with
+      | "expr" | "pat" | "str" | "stri" | "sig" | "sigi" | "sigil" | "type" -> Ok ()
+      | _ -> super#extension ext
+
     method! type_declaration td =
       if Attribute.has_flag allow_redundant_modalities_ptype td
       then Ok ()
@@ -835,13 +849,12 @@ module Comments_checking = struct
       Odoc_parser.parse_comment ~location ~text
     in
     List.iter (Odoc_parser.warnings odoc_parser) ~f:(fun warning ->
-      (* A whitelist of odoc errors that we've deemed are OK and have grandfathered
-         into the linter.
+      (* A whitelist of odoc errors that we've deemed are OK and have grandfathered into
+         the linter.
 
-         Try to avoid adding to this list! Instead, fix the odoc syntax error in the
-         doc comment. You are invited to remove things from this list -- just note
-         that you'll have to go through and fix existing instances of that error message
-         in the tree.
+         Try to avoid adding to this list! Instead, fix the odoc syntax error in the doc
+         comment. You are invited to remove things from this list -- just note that you'll
+         have to go through and fix existing instances of that error message in the tree.
       *)
       match warning.message with
       | "Stray '@'." -> ()
