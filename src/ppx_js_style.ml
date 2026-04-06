@@ -754,7 +754,7 @@ let check_modality_annotations
           | Psig_class _
           | Psig_class_type _
           | Psig_attribute _
-          | Psig_kind_abbrev _ ->
+          | Psig_jkind _ ->
             (* This is the boundary of the current signature, but keep recurring from here
                to find more nested signatures. *)
             self#signature_item sigi
