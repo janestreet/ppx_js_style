@@ -400,14 +400,20 @@ let check = iter_style_errors ~f:fail
 module Portability = struct
   type t =
     | Nonportable
-    | Unknown
+    | Unknown of string
     | Portable
+
+  let name = function
+    | Nonportable -> "nonportable"
+    | Unknown name -> name
+    | Portable -> "portable"
+  ;;
 
   let apply_modality mode ~modality =
     (* equivalent to [meet mode modality] *)
     match mode, modality with
     | Portable, _ | _, Portable -> Portable
-    | Unknown, _ | _, Unknown -> Unknown
+    | Unknown name, _ | _, Unknown name -> Unknown name
     | Nonportable, Nonportable -> Nonportable
   ;;
 
@@ -420,10 +426,10 @@ module Portability = struct
       match modal with
       | "portable" -> portable_modal := Some { txt = Portable; loc }
       | "nonportable" -> portable_modal := Some { txt = Nonportable; loc }
-      | _ -> unknown_modal := Some loc);
+      | name -> unknown_modal := Some (name, loc));
     match !portable_modal, !unknown_modal with
     | Some portability, _ -> Some portability
-    | _, Some loc -> Some { txt = Unknown; loc }
+    | _, Some (name, loc) -> Some { txt = Unknown name; loc }
     | None, None -> None
   ;;
 
@@ -472,7 +478,9 @@ let rec trivially_expand_ppx_template psg_items =
        let sig_ = Ppxlib_jane.Shim.Signature.of_parsetree sig_ in
        trivially_expand_ppx_template sig_.psg_items @ trivially_expand_ppx_template tl
      | Psig_attribute _
-       when Ppx_template_expander.Attributes.Floating.Poly.is_present Signature_item hd ->
+       when Ppx_template_expander.Attribute_handler.Floating.Poly.is_present
+              Signature_item
+              hd ->
        let open Ast_builder.Default in
        let loc = hd.psig_loc in
        [ psig_include
@@ -652,14 +660,19 @@ let check_modality_annotations
         in
         let signature_item_mode modalities ~allow_redundant_modalities =
           match Portability.find_modality modalities, sig_portability with
-          | Some { txt = _; loc }, { sig_mode = Portable; _ } ->
-            Error [ errorf ~loc "This modality annotation is ignored." ]
+          | Some { txt = portability; loc }, { sig_mode = Portable; _ } ->
+            Error
+              [ errorf
+                  ~loc
+                  "The modality annotation [%s] is ignored."
+                  (Portability.name portability)
+              ]
           | Some { txt = Portable; loc }, { default_modality = Portable; _ }
             when not allow_redundant_modalities ->
-            Error [ errorf ~loc "This portable annotation is redundant." ]
+            Error [ errorf ~loc "The modality annotation [portable] is redundant." ]
           | Some { txt = Nonportable; loc }, { default_modality = Nonportable; _ }
             when not allow_redundant_modalities ->
-            Error [ errorf ~loc "This nonportable annotation is redundant." ]
+            Error [ errorf ~loc "The modality annotation [nonportable] is redundant." ]
           | modality, { sig_mode; default_modality } ->
             let modality =
               match modality with
@@ -735,10 +748,14 @@ let check_modality_annotations
             in
             let* _ = signature_item_mode modalities ~allow_redundant_modalities in
             self#signature_item { sigi with psig_desc = Psig_value vd }
-          | Psig_extension ((_, PSig sig_), _attrs) ->
+          | Psig_extension ((name, PSig sig_), _attrs) ->
             (* Be more cautious when we meet an extension node; we don't know what is done
                with the payload *)
-            loop sig_ ~sig_mode:Unknown
+            loop
+              sig_
+              ~sig_mode:
+                (Unknown
+                   (Printf.sprintf "<unknown portability from extension %%%s>" name.txt))
           | Psig_type _ ->
             (* If this branch gets specialized logic, make sure it still calls into
                [#type_declaration]. *)
@@ -1053,12 +1070,11 @@ let () =
       in
       List.concat [ lint_modalities_errors ])
     ~lint_impl:(fun st ->
-      let lint_cold_errors =
-        (* note: we do not use ~impl because we want the check to run before ppx
-           processing (ppx_cold will replace `[@cold]` with `[@inline never] ...`) *)
-        enforce_cold#structure st []
-      in
+      let lint_cold_errors = enforce_cold#structure st [] in
       let lint_modalities_errors =
+        (* note: we do not use ~impl because we want the check to run before ppx
+           processing (ppx_template will introduce redundant modalities in some of the
+           template instances, which are okay) *)
         if !allow_redundant_modalities
         then []
         else (

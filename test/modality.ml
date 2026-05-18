@@ -377,7 +377,7 @@ end
   [%expect
     {|
     File "", line 2, characters 24-32:
-    Modality linting error: This modality annotation is ignored.
+    Modality linting error: The modality annotation [portable] is ignored.
     ```
     module (T @@ portable) : sig
       val x : int -> int @@ portable
@@ -395,7 +395,7 @@ end
   [%expect
     {|
     File "", line 2, characters 24-35:
-    Modality linting error: This modality annotation is ignored.
+    Modality linting error: The modality annotation [nonportable] is ignored.
     ```
     module (T @@ portable) : sig
       val x : int -> int @@ nonportable
@@ -415,7 +415,7 @@ end
   [%expect
     {|
     File "", line 2, characters 15-26:
-    Modality linting error: This modality annotation is ignored.
+    Modality linting error: The modality annotation [nonportable] is ignored.
     ```
     module (T @@ portable) : sig
       module (U @@ nonportable) : sig
@@ -435,7 +435,7 @@ end
   [%expect
     {|
     File "", line 2, characters 15-23:
-    Modality linting error: This modality annotation is ignored.
+    Modality linting error: The modality annotation [portable] is ignored.
     ```
     module (T @@ portable) : sig
       include S @@ portable
@@ -456,7 +456,7 @@ val x : int -> int @@ portable
   [%expect
     {|
     File "", line 2, characters 22-30:
-    Modality linting error: This portable annotation is redundant.
+    Modality linting error: The modality annotation [portable] is redundant.
     ```
     @@ portable
     val x : int -> int @@ portable
@@ -471,7 +471,7 @@ val x : int -> int @@ nonportable
   [%expect
     {|
     File "", line 1, characters 22-33:
-    Modality linting error: This nonportable annotation is redundant.
+    Modality linting error: The modality annotation [nonportable] is redundant.
     ```
     val x : int -> int @@ nonportable
                           ^^^^^^^^^^^
@@ -488,7 +488,7 @@ end
   [%expect
     {|
     File "", line 3, characters 24-35:
-    Modality linting error: This nonportable annotation is redundant.
+    Modality linting error: The modality annotation [nonportable] is redundant.
     ```
     @@ portable
     module (T @@ nonportable) : sig
@@ -549,7 +549,7 @@ end
   [%expect
     {|
     File "", line 3, characters 24-35:
-    Modality linting error: This modality annotation is ignored.
+    Modality linting error: The modality annotation [nonportable] is ignored.
     ```
     module%template T : sig @@ portable
       [@@@mode m = (local, global)]
@@ -877,7 +877,7 @@ type t =
   require_success
     {|
 type t =
-  { observing : string @@ observing portable
+  { reading : string @@ reading portable
   ; nonportable : string @@ stateless nonportable
   }
 |};
@@ -936,7 +936,7 @@ val x : [%unknown_ppx: module (T @@ nonportable) : U]
   [%expect
     {|
     File "", line 2, characters 36-47:
-    Modality linting error: This nonportable annotation is redundant.
+    Modality linting error: The modality annotation [nonportable] is redundant.
     ```
 
     val x : [%unknown_ppx: module (T @@ nonportable) : U]
