@@ -1,6 +1,0 @@
-(library
- (name ppx_js_style_test)
- (libraries base expect_test_helpers_base compiler-libs.common ppx_js_style
-   ppxlib)
- (preprocess
-  (pps ppx_expect)))

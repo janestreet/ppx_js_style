@@ -1,5 +1,4 @@
-ppx_js_style - Enforce Jane Street coding styles
-================================================
+# ppx_js_style - Enforce Jane Street coding styles
 
 `ppx_js_style` is an identity ppx rewriter that enforces Jane Street coding
 styles.
